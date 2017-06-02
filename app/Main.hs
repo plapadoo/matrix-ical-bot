@@ -16,10 +16,10 @@ import           Data.Map.Lazy                  (Map, filterWithKey,
                                                  intersection, intersectionWith,
                                                  mapKeys, singleton, toList,
                                                  (\\))
-import           Data.Maybe                     (fromJust)
+import           Data.Maybe                     (fromJust,Maybe(..))
 import           Data.Monoid                    ((<>))
 import           Data.String                    (String)
-import           Data.Text.Lazy                 (Text, intercalate, pack)
+import           Data.Text.Lazy                 (Text, intercalate, pack,toStrict)
 import           Data.Text.Lazy.IO              (putStrLn)
 import           Data.Tuple                     (fst, snd)
 import           Options.Applicative            (Parser, auto, execParser,
@@ -132,7 +132,7 @@ loopIteration settings reader previousResult = do
       loopIteration settings reader currentResult
     else do
       delayGlobal
-      result <- sendMessage (pack (settingMatrixBotUrl settings)) (pack (settingMatrixRoom settings)) (constructIncomingMessage (differenceToString diff) Nothing)
+      result <- sendMessage (toStrict (pack (settingMatrixBotUrl settings))) (toStrict (pack (settingMatrixRoom settings))) (constructIncomingMessage (toStrict (differenceToString diff)) Nothing)
       loopIteration settings reader currentResult
 
 readFileWithPauses :: FilePath -> IO EventMap
@@ -149,4 +149,4 @@ main :: IO ()
 main = do
   settings <- parseSettings
   initial <- readFileWithPauses (settingIcalFile settings)
-  loopIteration (readFileWithPauses (settingIcalFile settings)) initial
+  loopIteration settings (readFileWithPauses (settingIcalFile settings)) initial
