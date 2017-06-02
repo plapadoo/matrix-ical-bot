@@ -24,6 +24,7 @@ executable matrix-ical-bot-exe
                      , data-default
                      , containers
                      , text
+                     , matrix-bot-api
   default-language:    Haskell2010
   default-extensions:  NoImplicitPrelude, OverloadedStrings, DeriveFunctor
 
