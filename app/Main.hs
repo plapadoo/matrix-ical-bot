@@ -3,36 +3,40 @@ module Main where
 import           Control.Applicative            ((<*>))
 import           Control.Concurrent             (threadDelay)
 import           Control.Exception              (SomeException, catch)
-import           Control.Monad                  (return)
+import           Control.Monad                  (join, return, void)
 import           Data.Bool                      (Bool (..), (&&))
 import           Data.Default                   (def)
 import           Data.Either                    (Either (..))
-import           Data.Eq                        (Eq, (/=), (==))
+import           Data.Eq                        ((/=), (==))
 import           Data.Foldable                  (foldMap, null)
 import           Data.Function                  (($), (.))
 import           Data.Functor                   (Functor, (<$>))
+import           Data.Int                       (Int)
 import           Data.List                      (concatMap, filter, length)
-import           Data.Map.Lazy                  (Map, filterWithKey,
-                                                 intersection, intersectionWith,
-                                                 mapKeys, singleton, toList,
-                                                 (\\))
-import           Data.Maybe                     (fromJust,Maybe(..))
+import           Data.Map.Lazy                  (Map, intersectionWith,
+                                                 singleton, toList, (\\))
+import           Data.Maybe                     (Maybe (..), fromJust)
 import           Data.Monoid                    ((<>))
 import           Data.String                    (String)
-import           Data.Text.Lazy                 (Text, intercalate, pack,toStrict)
+import           Data.Text.Lazy                 (Text, intercalate, length,
+                                                 null, pack, toStrict)
 import           Data.Text.Lazy.IO              (putStrLn)
+import           Data.Time.Calendar             (Day, toGregorian)
+import           Data.Time.Clock                (UTCTime (..))
+import           Data.Time.LocalTime            (LocalTime (..), TimeOfDay (..))
 import           Data.Tuple                     (fst, snd)
-import           Options.Applicative            (Parser, auto, execParser,
-                                                 fullDesc, header, help, helper,
-                                                 info, long, metavar, option,
-                                                 progDesc, strOption, (<**>))
-import           Prelude                        (undefined, (*))
+import           Options.Applicative            (Parser, execParser, fullDesc,
+                                                 header, help, helper, info,
+                                                 long, metavar, progDesc,
+                                                 strOption, (<**>))
+import           Prelude                        (div, floor, mod, (*))
 import           System.FilePath                (FilePath)
 import           System.IO                      (IO)
 import           Text.ICalendar.Parser          (parseICalendarFile)
-import           Text.ICalendar.Types           (UID, VCalendar, VEvent,
-                                                 summaryValue, vcEvents,
-                                                 veSummary, veUID)
+import           Text.ICalendar.Types           (DTEnd (..), DTStart (..),
+                                                 Date (..), DateTime (..), UID,
+                                                 VCalendar, VEvent(..),
+                                                 summaryValue, vcEvents)
 import           Text.Show                      (Show, show)
 import           Web.Matrix.Bot.API             (sendMessage)
 import           Web.Matrix.Bot.IncomingMessage (constructIncomingMessage)
@@ -95,7 +99,7 @@ calculateDifference before after =
       afterSingleton = return <$> after
       mergedMaps = intersectionWith (<>) beforeSingleton afterSingleton
       mergedValues = snd <$> toList mergedMaps
-      twoTuples = filter ((==2) . length) mergedValues
+      twoTuples = filter ((==2) . Data.List.length) mergedValues
    in
     (\[a,b] -> (a,b)) <$> twoTuples
 
@@ -112,12 +116,70 @@ filterEqualElements diff = diff {
   }
 
 differenceIsEmpty :: Difference a -> Bool
-differenceIsEmpty d = null (diffDiffering d) && null (diffAdded d) && null (diffDeleted d)
+differenceIsEmpty d =
+     Data.Foldable.null (diffDiffering d)
+  && Data.Foldable.null (diffAdded d)
+  && Data.Foldable.null (diffDeleted d)
+
+dayToText :: Day -> Text
+dayToText day =
+  let (year,month,d) = toGregorian day
+  in pack $ " am " <> show d <> ". " <> show month <> ". " <> show year
+
+textShow :: Int -> Text
+textShow = pack . show
+
+timeOfDayToText :: TimeOfDay -> Text
+timeOfDayToText (TimeOfDay hour minute _) =
+  let minuteText = textShow minute
+      hourText = textShow hour
+      minutePadded = if Data.Text.Lazy.length minuteText == 1 then "0" <> minuteText else minuteText
+  in hourText <> minutePadded <> " Uhr"
+
+localTimeToText :: LocalTime -> Text
+localTimeToText (LocalTime day timeOfDay) =
+  let dayText = dayToText day
+      timeOfDayText = timeOfDayToText timeOfDay
+  in dayText <> " " <> timeOfDayText
+
+utcTimeToText :: UTCTime -> Text
+utcTimeToText (UTCTime day dayTime) =
+  let dayText = dayToText day
+      dayTimeInt = floor dayTime
+      timeOfDay = TimeOfDay (dayTimeInt `div` 60) (dayTimeInt `mod` 60) 0
+      dt = timeOfDayToText timeOfDay
+  in dayText <> " " <> dt
+
+startDateToText :: DTStart -> Text
+startDateToText (DTStartDateTime (FloatingDateTime localTime) _) = localTimeToText localTime
+startDateToText (DTStartDateTime (UTCDateTime utcTime) _) = utcTimeToText utcTime
+startDateToText (DTStartDateTime (ZonedDateTime localTime timeZone) _) = localTimeToText localTime <> "@" <> timeZone
+startDateToText (DTStartDate (Date day) _) = dayToText day
+
+endDateToText :: DTEnd -> Text
+endDateToText (DTEndDateTime (FloatingDateTime localTime) _) = localTimeToText localTime
+endDateToText (DTEndDateTime (UTCDateTime utcTime) _) = utcTimeToText utcTime
+endDateToText (DTEndDateTime (ZonedDateTime localTime timeZone) _) = localTimeToText localTime <> "@" <> timeZone
+endDateToText (DTEndDate (Date day) _) = dayToText day
+
+formatEvent :: VEvent -> Text
+formatEvent e =
+  let summary = (summaryValue . fromJust . veSummary) e
+      maybeStart = foldMap startDateToText (veDTStart e)
+  in if Data.Text.Lazy.null maybeStart then summary else summary <> " @ " <> maybeStart
+
 
 differenceToString :: Difference VEvent -> Text
 differenceToString diff =
-  let summaryDiff = (summaryValue . fromJust . veSummary) <$> diff
-  in "added: " <> intercalate ", " (diffAdded summaryDiff) <> ", removed: " <> intercalate ", " (diffDeleted summaryDiff) <> ", changed: " <> intercalate "," (fst <$> diffDiffering summaryDiff)
+  let summaryDiff = formatEvent <$> diff
+      addedValues = intercalate ", " (diffAdded summaryDiff)
+      deletedValues = intercalate ", " (diffDeleted summaryDiff)
+      changedValues = intercalate "," (fst <$> diffDiffering summaryDiff)
+      totalValues = [
+          if Data.Text.Lazy.null addedValues then [] else ["added: " <> addedValues]
+        , if Data.Text.Lazy.null deletedValues then [] else ["deleted: " <> deletedValues]
+        , if Data.Text.Lazy.null changedValues then [] else ["changed: " <> changedValues]]
+  in "calendar: " <> intercalate ", " (join totalValues)
 
 delayGlobal :: IO ()
 delayGlobal = threadDelay (1000 * 1000)
@@ -132,7 +194,7 @@ loopIteration settings reader previousResult = do
       loopIteration settings reader currentResult
     else do
       delayGlobal
-      result <- sendMessage (toStrict (pack (settingMatrixBotUrl settings))) (toStrict (pack (settingMatrixRoom settings))) (constructIncomingMessage (toStrict (differenceToString diff)) Nothing)
+      void $ sendMessage (toStrict (pack (settingMatrixBotUrl settings))) (toStrict (pack (settingMatrixRoom settings))) (constructIncomingMessage (toStrict (differenceToString diff)) Nothing)
       loopIteration settings reader currentResult
 
 readFileWithPauses :: FilePath -> IO EventMap

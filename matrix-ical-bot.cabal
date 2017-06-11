@@ -23,6 +23,7 @@ executable matrix-ical-bot-exe
                      , filepath
                      , data-default
                      , containers
+                     , time
                      , text
                      , matrix-bot-api
   default-language:    Haskell2010
