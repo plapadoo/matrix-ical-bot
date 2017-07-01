@@ -124,7 +124,7 @@ differenceIsEmpty d =
 dayToText :: Day -> Text
 dayToText day =
   let (year,month,d) = toGregorian day
-  in pack $ " am " <> show d <> ". " <> show month <> ". " <> show year
+  in pack $ " am " <> show d <> "." <> show month <> "." <> show year
 
 textShow :: Int -> Text
 textShow = pack . show
@@ -134,7 +134,7 @@ timeOfDayToText (TimeOfDay hour minute _) =
   let minuteText = textShow minute
       hourText = textShow hour
       minutePadded = if Data.Text.Lazy.length minuteText == 1 then "0" <> minuteText else minuteText
-  in hourText <> minutePadded <> " Uhr"
+  in hourText <> ":" <> minutePadded <> " Uhr"
 
 localTimeToText :: LocalTime -> Text
 localTimeToText (LocalTime day timeOfDay) =
@@ -166,7 +166,7 @@ formatEvent :: VEvent -> Text
 formatEvent e =
   let summary = (summaryValue . fromJust . veSummary) e
       maybeStart = foldMap startDateToText (veDTStart e)
-  in if Data.Text.Lazy.null maybeStart then summary else summary <> " @ " <> maybeStart
+  in if Data.Text.Lazy.null maybeStart then summary else summary <> maybeStart
 
 
 differenceToString :: Difference VEvent -> Text
