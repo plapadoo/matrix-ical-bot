@@ -31,6 +31,6 @@ dependencies:
 - containers
 - time
 executables:
-  matrix-mail-bot-exe:
+  matrix-ical-bot-exe:
     main: Main.hs
     source-dirs: app
