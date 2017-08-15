@@ -3,20 +3,20 @@ module Main where
 import           Config                         (Config, configBotUrl,
                                                  configIcalDir, configRoom)
 import           Control.Applicative            (pure)
-import           Data.Eq                        ((==))
 import           Data.Int                       (Int)
 
 import           Control.Concurrent             (newChan, readChan)
 import           Control.Exception              (SomeException, catch)
 import           Control.Monad                  (Monad, forever, void, when)
-import           Data.Bool                      (Bool (..))
+import           Data.Bool                      (Bool (..),not)
 import           Data.Default                   (def)
 import           Data.Either                    (Either (..))
 import           Data.Foldable                  (concatMap, foldMap)
 import           Data.Function                  (const, flip, ($), (.))
 import           Data.Functor                   ((<$>))
 import           Data.Map.Lazy                  (toList)
-import           Data.Maybe                     (Maybe (..), fromJust)
+import Data.List(isInfixOf)
+import           Data.Maybe                     (Maybe (..))
 import           Data.Monoid                    (Monoid, (<>))
 import           Data.Ord                       ((<))
 import           Data.String                    (IsString (fromString), String)
@@ -28,8 +28,7 @@ import           Data.Time.LocalTime            (LocalTime (..), TimeOfDay (..))
 import           Data.Tuple                     (snd)
 import           Dhall                          (auto, input)
 import           Lucid                          (Html)
-import           Prelude                        (div, floor, mod, (*))
-import           System.Directory               (doesFileExist)
+import           Prelude                        (div, floor, mod)
 import           System.FSNotify                (Event (..), watchTreeChan,
                                                  withManager)
 import           System.IO                      (FilePath, IO)
@@ -78,6 +77,14 @@ processEvent config event = do
       let message = constructIncomingMessage ("ical file “"<> (fromString fn) <>"” was removed") Nothing
       in mySendMessage message
 
+eventPath :: Event -> FilePath
+eventPath (Added fn _) = fn
+eventPath (Modified fn _) = fn
+eventPath (Removed fn _) = fn
+
+validEvent :: Event -> Bool
+validEvent e = not (".Radicale.cache" `isInfixOf` eventPath e)
+
 main :: IO ()
 main = do
   config <- input auto "/etc/matrix-bot/matrix-ical-bot.dhall"
@@ -92,7 +99,7 @@ main = do
 
     forever $ do
       event <- readChan eventChan
-      processEvent config event
+      when (validEvent event) (processEvent config event)
 
 dayToText :: IsString a => Day -> a
 dayToText day =
