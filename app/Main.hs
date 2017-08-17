@@ -8,14 +8,14 @@ import           Data.Int                       (Int)
 import           Control.Concurrent             (newChan, readChan)
 import           Control.Exception              (SomeException, catch)
 import           Control.Monad                  (Monad, forever, void, when)
-import           Data.Bool                      (Bool (..),not)
+import           Data.Bool                      (Bool (..), not)
 import           Data.Default                   (def)
 import           Data.Either                    (Either (..))
 import           Data.Foldable                  (concatMap, foldMap)
 import           Data.Function                  (const, flip, ($), (.))
 import           Data.Functor                   ((<$>))
+import           Data.List                      (isInfixOf,any)
 import           Data.Map.Lazy                  (toList)
-import Data.List(isInfixOf)
 import           Data.Maybe                     (Maybe (..))
 import           Data.Monoid                    (Monoid, (<>))
 import           Data.Ord                       ((<))
@@ -34,7 +34,7 @@ import           System.FSNotify                (Event (..), watchTreeChan,
 import           System.IO                      (FilePath, IO)
 import           Text.ICalendar.Parser          (parseICalendarFile)
 import           Text.ICalendar.Types           (DTEnd (..), DTStart (..),
-                                                 Date (..), DateTime (..), UID,
+                                                 Date (..), DateTime (..), 
                                                  VEvent, summaryValue, vcEvents,
                                                  veDTStart, veSummary)
 import           Text.Show                      (show)
@@ -78,12 +78,12 @@ processEvent config event = do
       in mySendMessage message
 
 eventPath :: Event -> FilePath
-eventPath (Added fn _) = fn
+eventPath (Added fn _)    = fn
 eventPath (Modified fn _) = fn
-eventPath (Removed fn _) = fn
+eventPath (Removed fn _)  = fn
 
 validEvent :: Event -> Bool
-validEvent e = not (".Radicale.cache" `isInfixOf` eventPath e)
+validEvent e = not (any (`isInfixOf` eventPath e) [".Radicale.cache",".Radicale.tmp"])
 
 main :: IO ()
 main = do
@@ -91,7 +91,7 @@ main = do
   withManager $ \mgr -> do
     eventChan <- newChan
     -- start a watching job (in the background)
-    stopListening <- watchTreeChan
+    _ <- watchTreeChan
       mgr
       (configIcalDir config)
       (const True)
