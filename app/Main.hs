@@ -14,7 +14,7 @@ import           Data.Either                    (Either (..))
 import           Data.Foldable                  (concatMap, foldMap)
 import           Data.Function                  (const, flip, ($), (.))
 import           Data.Functor                   ((<$>))
-import           Data.List                      (isInfixOf,any)
+import           Data.List                      (any, isInfixOf)
 import           Data.Map.Lazy                  (toList)
 import           Data.Maybe                     (Maybe (..))
 import           Data.Monoid                    (Monoid, (<>))
@@ -34,7 +34,7 @@ import           System.FSNotify                (Event (..), watchTreeChan,
 import           System.IO                      (FilePath, IO)
 import           Text.ICalendar.Parser          (parseICalendarFile)
 import           Text.ICalendar.Types           (DTEnd (..), DTStart (..),
-                                                 Date (..), DateTime (..), 
+                                                 Date (..), DateTime (..),
                                                  VEvent, summaryValue, vcEvents,
                                                  veDTStart, veSummary)
 import           Text.Show                      (show)
@@ -50,7 +50,7 @@ whenM b a = do
 processIcalFile :: FilePath -> (IncomingMessage StrictText.Text (Html ()) -> IO ()) -> StrictText.Text -> IO ()
 processIcalFile fn mySendMessage mode = do
   let showException :: SomeException -> String
-      showException e = show e
+      showException = show
   result <- parseICalendarFile def fn `catch` (pure . Left . showException)
   case result of
     Left e ->
@@ -74,7 +74,7 @@ processEvent config event = do
     Added fn _    -> processIcalFile fn mySendMessage "added"
     Modified fn _ -> processIcalFile fn mySendMessage "modified"
     Removed fn _  ->
-      let message = constructIncomingMessage ("ical file “"<> (fromString fn) <>"” was removed") Nothing
+      let message = constructIncomingMessage ("ical file “"<> fromString fn <>"” was removed") Nothing
       in mySendMessage message
 
 eventPath :: Event -> FilePath
@@ -150,4 +150,4 @@ formatEvent e =
       let summary = summaryValue summary'
       in case veDTStart e of
            Nothing        -> summary
-           Just startDate -> summary <> (startDateToText startDate)
+           Just startDate -> summary <> startDateToText startDate
