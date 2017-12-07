@@ -23,6 +23,26 @@ source-repository head
   type: git
   location: https://github.com/plapadoo/matrix-ical-bot
 
+library
+  hs-source-dirs:      src
+  default-language:    Haskell2010
+  exposed-modules: MatrixIcal, MatrixIcalUtil
+  build-depends: 
+      base
+    , iCalendar
+    , matrix-bot-api
+    , dhall
+    , lens
+    , text-format
+    , text
+    , filepath
+    , thyme
+    , fsnotify
+    , directory
+    , data-default
+    , lucid
+    , containers
+
 executable matrix-ical-bot-exe
   main-is: Main.hs
   hs-source-dirs:
@@ -31,17 +51,24 @@ executable matrix-ical-bot-exe
   ghc-options: -threaded -rtsopts -with-rtsopts=-N -Wall
   build-depends:
       base
-    , iCalendar
     , matrix-bot-api
     , dhall
-    , text-format
+    , matrix-ical-bot
     , text
     , fsnotify
-    , directory
-    , data-default
-    , lucid
-    , containers
-    , time
+    , text-format
   other-modules:
       Config
   default-language: Haskell2010
+
+test-suite test-hunit
+  type:             exitcode-stdio-1.0
+  default-language:    Haskell2010
+  hs-source-dirs:   test
+  Main-is:          Tests.hs
+  Build-Depends:    base
+                  , tasty
+                  , tasty-hunit
+                  , thyme
+                  , old-locale
+                  , matrix-ical-bot
