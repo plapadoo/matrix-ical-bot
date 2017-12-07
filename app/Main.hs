@@ -43,6 +43,7 @@ processEvent config event = do
 newWaitJob :: Config -> IO (Maybe ThreadId)
 newWaitJob config = do
   le <- latestEvent (configIcalDir config)
+  putStrLn ("latest event: " <> show le)
   maybeJust le (pure Nothing) $ \(pointInFuture, message) -> do
     backThread <- forkIO $ do
       ct <- getCurrentTime
