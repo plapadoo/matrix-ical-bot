@@ -53,7 +53,10 @@ executable matrix-ical-bot-exe
       base
     , matrix-bot-api
     , dhall
+    , lens
     , matrix-ical-bot
+    , thyme
+    , vector-space
     , text
     , fsnotify
     , text-format
