@@ -61,6 +61,7 @@ main = do
     eventChan <- newChan
 
     -- start a watching job (in the background)
+    putStrLn "starting fs watch..."
     _ <- watchTreeChan
       mgr
       (configIcalDir config)
@@ -72,6 +73,7 @@ main = do
 
 mainLoop :: Config -> Chan Event -> Maybe ThreadId -> IO ()
 mainLoop config eventChan waitJob = do
+  putStrLn "waiting for next FS event..."
   e <- readChan eventChan
   when (validEventPath (eventPath e)) (processEvent config e)
   for_ waitJob killThread
