@@ -7,10 +7,10 @@ import           Control.Lens                   (from, view, (^.))
 import           Control.Monad                  (join)
 import           Data.Bool                      (Bool (..), not)
 import           Data.Default                   (def)
-import           Data.Either                    (Either (..))
+import           Data.Either                    (Either (..), partitionEithers)
 import           Data.Eq                        (Eq, (==))
-import           Data.Foldable                  (concatMap, foldMap)
-import           Data.Function                  (const, flip, ($), (.))
+import           Data.Foldable                  (concatMap, foldMap, forM_)
+import           Data.Function                  (flip, ($), (.))
 import           Data.Functor                   ((<$>))
 import           Data.Int                       (Int)
 import           Data.List                      (any, filter, isInfixOf)
@@ -34,12 +34,12 @@ import           Data.Thyme.Time.Core           (toThyme)
 import           Data.Traversable               (traverse)
 import           Data.Tuple                     (fst, snd)
 import           Lucid                          (Html)
-import           MatrixIcalUtil                 (eitherRight, firstLeftOrRights,
-                                                 listDirectory, minimumBySafe,
+import           MatrixIcalUtil                 (listDirectory, minimumBySafe,
                                                  showException)
 import           Prelude                        (pred, succ, (*))
 import           System.FSNotify                (Event (..))
-import           System.IO                      (FilePath, IO)
+import           System.IO                      (FilePath, IO, hPutStrLn,
+                                                 stderr)
 import           Text.ICalendar.Parser          (parseICalendarFile)
 import           Text.ICalendar.Types           (DTEnd (..), DTStart (..),
                                                  Date (..), DateTime (..),
@@ -79,7 +79,7 @@ eventPath (Modified fn _) = fn
 eventPath (Removed fn _)  = fn
 
 validEventPath :: FilePath -> Bool
-validEventPath e = not (any (`isInfixOf` e) [".Radicale.cache",".Radicale.tmp"])
+validEventPath e = not (any (`isInfixOf` e) [".Radicale.cache",".Radicale.tmp",".Radicale.props"])
 
 newtype Seconds = Seconds { getSeconds :: Int } deriving(Eq,Ord)
 
@@ -141,7 +141,10 @@ latestEvent icalDir = do
   files <- filter validEventPath <$> listDirectory icalDir
   eithers <- traverse parseICalendarFileSafe files
   now <- getCurrentTime
-  pure $ eitherRight (join <$> firstLeftOrRights eithers) (const Nothing) (latestEvent' now)
+  let (lefts,rights) = partitionEithers eithers
+  -- print all errors, then ignore
+  forM_ lefts (hPutStrLn stderr)
+  pure (latestEvent' now (join rights))
 
 dayToText :: IsString a => Day -> a
 dayToText day =
