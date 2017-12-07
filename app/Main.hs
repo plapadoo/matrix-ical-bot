@@ -47,6 +47,7 @@ newWaitJob config = do
     backThread <- forkIO $ do
       ct <- getCurrentTime
       let diff = pointInFuture .-. ct
+      void (sendMessage (configBotUrl config) (configRoom config) (constructIncomingMessage ("Next appointment: " <> (LazyText.toStrict message)) Nothing))
       putStrLn ("Waiting until " <> show pointInFuture)
       threadDelay (fromIntegral (diff ^. microseconds))
       void (sendMessage (configBotUrl config) (configRoom config) (constructIncomingMessage (LazyText.toStrict message) Nothing))
