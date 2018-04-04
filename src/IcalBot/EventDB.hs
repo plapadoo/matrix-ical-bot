@@ -7,6 +7,7 @@ module IcalBot.EventDB(
   , formatDiffs
   , formatEventsUID
   , eventDBFromList
+  , eventDBFromFile
   , nextNotification) where
 
 
@@ -145,6 +146,14 @@ validEventPath e = not (any (`isInfixOf` e) [".Radicale.cache",".Radicale.tmp","
 
 eventDBFromList :: [Appointment] -> EventDB
 eventDBFromList = EventDB . foldr (\e -> Map.insert (e ^. ieUid) e) mempty
+
+eventDBFromFile :: FilePath -> IO EventDB
+eventDBFromFile icalFile = do
+  eithers <- traverseCalFiles [icalFile]
+  let (lefts,rights) = partitionEithers eithers
+  -- print all errors, then ignore
+  forM_ lefts (hPutStrLn stderr)
+  pure (eventDBFromList (join rights))
 
 eventDBFromFS :: FilePath -> IO EventDB
 eventDBFromFS icalDir = do

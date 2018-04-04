@@ -1,12 +1,14 @@
 {-# LANGUAGE TemplateHaskell #-}
 import           Control.Applicative            (pure)
 import           Data.String                    (String)
+import           Data.Thyme.Calendar            (Day)
 import           Data.Thyme.Clock               (UTCTime)
 import           Data.Thyme.Format              (readTime)
 import           IcalBot.Appointment            (AppointedTime (..),
                                                  Appointment (..),
                                                  DateOrDateTime (..))
-import           IcalBot.EventDB                (eventDBFromFS, eventDBFromList)
+import           IcalBot.EventDB                (eventDBFromFile,
+                                                 eventDBFromList)
 import           System.IO                      (IO)
 import           System.Locale                  (defaultTimeLocale)
 import           Test.Framework.Providers.HUnit (testCase)
@@ -16,18 +18,32 @@ import           Test.HUnit                     ((@?=))
 readTimeString :: String -> UTCTime
 readTimeString = readTime defaultTimeLocale "%FT%T%Q"
 
-case_dateTimeFromZonedDateTime = do
-  appt <- eventDBFromFS "test/data"
+readDayString :: String -> Day
+readDayString = readTime defaultTimeLocale "%F"
+
+case_eventWithRange = do
+  let fn = "test/data/created_in_thunderbird.ical"
+  appt <- eventDBFromFile fn
   let start = readTimeString "2017-11-01T10:00:00"
       end = readTimeString "2017-11-01T11:00:00"
   let testAppt = Appointment {
-          _iePath = "test/data/created_in_thunderbird.ical"
+          _iePath = fn
         , _ieSummary = "testevent"
         , _ieTime = Range (AtPoint start) (AtPoint end)
         , _ieUid = "06c41895-6d2c-44c2-ae29-50fa85692765"
         }
   appt @?= (eventDBFromList [testAppt])
-  pure ()
+
+case_eventWithDate = do
+  let fn = "test/data/just_date.ical"
+  appt <- eventDBFromFile fn
+  let testAppt = Appointment {
+          _iePath = fn
+        , _ieSummary = "dateevent"
+        , _ieTime = Range (AllDay (readDayString "2019-05-31")) (AllDay (readDayString "2019-06-03"))
+        , _ieUid = "f8a596b2-2c5c-4628-831a-1d505da9ae18"
+        }
+  appt @?= (eventDBFromList [testAppt])
 
 main :: IO ()
 main = $(defaultMainGenerator)
