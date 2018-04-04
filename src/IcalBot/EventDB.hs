@@ -2,12 +2,11 @@ module IcalBot.EventDB(
     EventDB
   , EventID
   , eventDBFromFS
-  , formatEvents
   , compareDB
-  , formatDiffs
-  , formatEventsUID
   , eventDBFromList
   , eventDBFromFile
+  , eventsByUID
+  , EventDifference(..)
   , nextNotification) where
 
 
@@ -18,38 +17,28 @@ import           Control.Monad         (join)
 import           Data.Bool             (Bool, not)
 import           Data.Default          (def)
 import           Data.Either           (Either (Left, Right), partitionEithers)
-import           Data.Eq               (Eq, (==))
+import           Data.Eq               (Eq, (/=))
 import           Data.Foldable         (foldr, forM_, toList)
 import           Data.Function         (flip, ($), (.))
 import           Data.Functor          ((<$>))
-import           Data.Int              (Int)
 import           Data.List             (any, concatMap, filter, isInfixOf)
 import qualified Data.Map.Strict       as Map
-import           Data.Maybe            (Maybe (Just, Nothing), catMaybes,
-                                        fromJust)
+import           Data.Maybe            (Maybe, catMaybes, fromJust)
 import           Data.Monoid           (Monoid, mappend, mempty, (<>))
-import           Data.Ord              ((<))
 import qualified Data.Set              as Set
-import           Data.String           (IsString (fromString), String)
+import           Data.String           (String)
 import qualified Data.Text             as Text
-import           Data.Thyme.Calendar   (Day, gregorian, _ymdDay, _ymdMonth,
-                                        _ymdYear)
-import           Data.Thyme.Clock      (UTCTime, _utctDay, _utctDayTime)
-import           Data.Thyme.LocalTime  (TimeOfDay (..), timeOfDay)
+import           Data.Thyme.Clock      (UTCTime)
 import           Data.Traversable      (traverse)
 import           Data.Tuple            (fst)
-import           IcalBot.Appointment   (AppointedTime (OnlyStart, Range),
-                                        Appointment,
-                                        DateOrDateTime (AllDay, AtPoint),
-                                        fromIcal, ieSummary, ieTime, ieUid)
-import           IcalBot.MatrixMessage (MatrixMessage, plainMessage)
+import           IcalBot.Appointment   (Appointment, fromIcal, ieUid)
 import           IcalBot.Util          (listDirectory, showException)
 import           Prelude               (undefined)
 import           System.FilePath       (FilePath)
 import           System.IO             (IO, hPutStrLn, stderr)
 import           Text.ICalendar.Parser (parseICalendarFile)
 import           Text.ICalendar.Types  (VCalendar (vcEvents), VEvent)
-import           Text.Show             (Show, show)
+import           Text.Show             (Show)
 
 type EventID = Text.Text
 
@@ -69,7 +58,7 @@ parseICalendarFileSafe fn = (fst <$>) <$> parseICalendarFile def fn `catch` (pur
 data EventDifference = DiffNew Appointment
                      | DiffDeleted Appointment
                      | DiffModified Appointment
-                     deriving(Show)
+                     deriving(Show, Eq)
 
 flipLook :: Map.Map EventID a -> EventID -> Maybe a
 flipLook = flip Map.lookup
@@ -80,57 +69,9 @@ compareDB (EventDB old) (EventDB new) =
       inserted = DiffNew <$> Map.elems (new `Map.difference` old)
       modifiedKeys :: Set.Set EventID
       modifiedKeys = Map.keysSet old `Set.intersection` Map.keysSet new
-      modified = Set.filter (\key -> Map.lookup key old == Map.lookup key new) modifiedKeys
+      modified = Set.filter (\key -> Map.lookup key old /= Map.lookup key new) modifiedKeys
       afterMod = (DiffModified . fromJust . flipLook new) <$> toList modified
   in inserted <> deleted <> afterMod
-
-dayToText :: Day -> Text.Text
-dayToText day =
-  let ymd = day ^. gregorian
-  in Text.pack $ show (ymd ^. _ymdDay) <> "." <> show (ymd ^. _ymdMonth) <> "." <> show (ymd ^. _ymdYear)
-
-utcTimeToText :: UTCTime -> Text.Text
-utcTimeToText t =
-  let dayText :: Text.Text
-      dayText = dayToText (t ^. _utctDay)
-      dayTimeInt = t ^. _utctDayTime . timeOfDay
-      dt :: Text.Text
-      dt = timeOfDayToText dayTimeInt
-  in dayText <> " " <> dt
-
-formatDateOrDateTime :: DateOrDateTime -> Text.Text
-formatDateOrDateTime (AllDay day)      = dayToText day
-formatDateOrDateTime (AtPoint utcTime) = utcTimeToText utcTime
-
-textShow :: IsString a => Int -> a
-textShow = fromString . show
-
-timeOfDayToText :: TimeOfDay -> Text.Text
-timeOfDayToText (TimeOfDay hour minute _) =
-  let minuteText = textShow minute
-      hourText = textShow hour
-      minutePadded = if minute < 10 then "0" <> minuteText else minuteText
-  in hourText <> ":" <> minutePadded <> " Uhr"
-
-formatTime :: AppointedTime -> Text.Text
-formatTime (OnlyStart dateOrDt) = formatDateOrDateTime dateOrDt
-formatTime (Range start end)    = "Von " <> formatDateOrDateTime start <> " bis " <> formatDateOrDateTime end
-
-formatEventAsText :: Appointment -> Text.Text
-formatEventAsText e = (e ^. ieSummary) <> " " <> formatTime (e ^. ieTime)
-
-formatDiffAsText :: EventDifference -> Text.Text
-formatDiffAsText (DiffNew e)      = "Neuer Termin: " <> formatEventAsText e
-formatDiffAsText (DiffDeleted e)  = "Termin entfernt: " <> formatEventAsText e
-formatDiffAsText (DiffModified e) = "Termin anders: " <> formatEventAsText e
-
-formatDiffs :: [EventDifference] -> Maybe MatrixMessage
-formatDiffs [] = Nothing
-formatDiffs xs = Just (plainMessage (Text.intercalate "," (formatDiffAsText <$> xs)))
-
-formatEvents :: [Appointment] -> Maybe MatrixMessage
-formatEvents [] = Nothing
-formatEvents xs = Just (plainMessage (Text.intercalate "," (formatEventAsText <$> xs)))
 
 traverseCalFiles :: [FilePath] -> IO [Either String [Appointment]]
 traverseCalFiles files = (flip traverse) files $ \fn -> do
@@ -167,5 +108,6 @@ eventDBFromFS icalDir = do
 nextNotification :: EventDB -> [EventID] -> Maybe (UTCTime, [EventID])
 nextNotification = undefined
 
-formatEventsUID :: EventDB -> [EventID] -> Maybe MatrixMessage
-formatEventsUID (EventDB m) uids = formatEvents (catMaybes (flipLook m <$> uids))
+eventsByUID :: EventDB -> [EventID] -> [Appointment]
+eventsByUID (EventDB db) uids = catMaybes (flipLook db <$> uids)
+

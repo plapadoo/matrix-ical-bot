@@ -16,8 +16,9 @@ import           Data.Monoid             (mempty)
 import qualified Data.Text.IO            as TextIO
 import           Data.Thyme.Clock        (getCurrentTime, microseconds)
 import           IcalBot.EventDB         (EventDB, EventID, compareDB,
-                                          eventDBFromFS, formatDiffs,
-                                          formatEventsUID, nextNotification)
+                                          eventDBFromFS, eventsByUID,
+                                          nextNotification)
+import           IcalBot.Formatting      (formatDiffs, formatEvents)
 import           IcalBot.MatrixMessage   (MatrixMessage (..),
                                           incomingMessageToText)
 import           Prelude                 (fromIntegral)
@@ -45,7 +46,7 @@ newWaitJob db stateVar excludeUids = do
         threadDelay (fromIntegral (diff ^. microseconds))
         modifyMVar_ stateVar $ \(ProgramState db' dir _) -> do
           newWait <- newWaitJob db' stateVar uids
-          for_ (formatEventsUID db' uids) sendMessage
+          for_ (formatEvents (eventsByUID db' uids)) sendMessage
           pure (ProgramState db' dir newWait)
       pure (Just (WaitJob backThread))
 

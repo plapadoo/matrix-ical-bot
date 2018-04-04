@@ -28,6 +28,7 @@ library
                      , IcalBot.MatrixMessage
                      , IcalBot.EventDB
                      , IcalBot.Appointment
+                     , IcalBot.Formatting
   build-depends: 
       base
     , iCalendar
@@ -75,6 +76,8 @@ test-suite test-hunit
                      , test-framework-th
                      , test-framework-hunit
                      , HUnit
+                     , text
+                     , vector-space
                      , thyme
                      , old-locale
                      , matrix-ical
