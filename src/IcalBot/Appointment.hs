@@ -1,4 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
+-- |Functions for the appointment data structure and its friends
+-- (mostly wrapping Icalendar types)
 module IcalBot.Appointment(
     Appointment(..)
   , iePath
@@ -6,7 +8,7 @@ module IcalBot.Appointment(
   , ieTime
   , fromIcal
   , DateOrDateTime(..)
-  , InternalTime(..)
+  , AppointedTime(..)
   , ieSummary) where
 
 import           Control.Applicative  (pure)
@@ -23,7 +25,7 @@ import           Data.Thyme.Clock     (UTCTime)
 import           Data.Thyme.LocalTime (LocalTime, TimeZone, utc, utcLocalTime)
 import           Data.Thyme.Time.Core (fromThyme, toThyme)
 import qualified Data.Time.Clock      as TimeClock
-import           Data.Time.Zones      (loadSystemTZ, timeZoneForUTCTime)
+import           Data.Time.Zones      (loadTZFromDB, timeZoneForUTCTime)
 import           Prelude              (error)
 import           System.FilePath      (FilePath)
 import           System.IO            (IO)
@@ -55,7 +57,10 @@ dateTimeFromIcal dt =
     ZonedDateTime local tz -> do
       let tzString :: String
           tzString = LazyText.unpack tz
-      zoneAsTz <- loadSystemTZ tzString
+      -- Technically wrong; the time zone should be parsed and
+      -- interpreted from the ical file itself, but that seemed to
+      -- much of a hassle as of the time of writing this.
+      zoneAsTz <- loadTZFromDB tzString
       let localThyme :: LocalTime
           localThyme = toThyme local
           localAsUtc :: TimeClock.UTCTime
@@ -69,7 +74,7 @@ dateTimeFromIcal dt =
     FloatingDateTime d -> pure (AtPoint (localToUTC (toThyme d)))
 
 -- |Either a point in time or a date range
-data InternalTime = OnlyStart DateOrDateTime
+data AppointedTime = OnlyStart DateOrDateTime
                   | Range DateOrDateTime DateOrDateTime
                   deriving(Show, Eq)
 
@@ -86,7 +91,7 @@ data Appointment = Appointment {
   -- |Summary, taken directly from ical
   , _ieSummary :: Text.Text
   -- |Boiled down time value in our internal format.
-  , _ieTime    :: InternalTime
+  , _ieTime    :: AppointedTime
   -- |UID without the "other" parameter from ical
   , _ieUid     :: Text.Text
   } deriving(Show, Eq)
@@ -94,7 +99,7 @@ data Appointment = Appointment {
 makeLenses ''Appointment
 
 -- |Convert a start and an optional end (or a duration) to the internal format
-timeFromIcal :: DTStart -> Maybe (Either DTEnd DurationProp) -> IO InternalTime
+timeFromIcal :: DTStart -> Maybe (Either DTEnd DurationProp) -> IO AppointedTime
 timeFromIcal start end = do
   start' <-
     case start of

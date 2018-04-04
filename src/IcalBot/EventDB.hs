@@ -6,55 +6,58 @@ module IcalBot.EventDB(
   , compareDB
   , formatDiffs
   , formatEventsUID
+  , eventDBFromList
   , nextNotification) where
 
 
-import           Control.Applicative           (pure)
-import           Control.Exception             (catch)
-import           Control.Lens                  ((^.))
-import           Control.Monad                 (join)
-import           Data.Bool                     (Bool, not)
-import           Data.Default                  (def)
-import           Data.Either                   (Either (Left, Right),
-                                                partitionEithers)
-import           Data.Eq                       ((==))
-import           Data.Foldable                 (foldr, forM_, toList)
-import           Data.Function                 (flip, ($), (.))
-import           Data.Functor                  ((<$>))
-import           Data.Int                      (Int)
-import           Data.List                     (any, concatMap, filter,
-                                                isInfixOf)
-import qualified Data.Map.Strict               as Map
-import           Data.Maybe                    (Maybe (Just, Nothing),
-                                                catMaybes, fromJust)
-import           Data.Monoid                   (mempty, (<>))
-import           Data.Ord                      ((<))
-import qualified Data.Set                      as Set
-import           Data.String                   (IsString (fromString), String)
-import qualified Data.Text                     as Text
-import           Data.Thyme.Calendar           (Day, gregorian, _ymdDay,
-                                                _ymdMonth, _ymdYear)
-import           Data.Thyme.Clock              (UTCTime, _utctDay, _utctDayTime)
-import           Data.Thyme.LocalTime          (TimeOfDay (..), timeOfDay)
-import           Data.Traversable              (traverse)
-import           Data.Tuple                    (fst)
-import           IcalBot.Appointment           (Appointment,
-                                                DateOrDateTime (AllDay, AtPoint),
-                                                InternalTime (OnlyStart, Range),
-                                                fromIcal, ieSummary, ieTime,
-                                                ieUid)
-import           IcalBot.MatrixIncomingMessage (IncomingMessage, plainMessage)
-import           IcalBot.Util                  (listDirectory, showException)
-import           Prelude                       (undefined)
-import           System.FilePath               (FilePath)
-import           System.IO                     (IO, hPutStrLn, stderr)
-import           Text.ICalendar.Parser         (parseICalendarFile)
-import           Text.ICalendar.Types          (VCalendar (vcEvents), VEvent)
-import           Text.Show                     (Show, show)
+import           Control.Applicative   (pure)
+import           Control.Exception     (catch)
+import           Control.Lens          ((^.))
+import           Control.Monad         (join)
+import           Data.Bool             (Bool, not)
+import           Data.Default          (def)
+import           Data.Either           (Either (Left, Right), partitionEithers)
+import           Data.Eq               (Eq, (==))
+import           Data.Foldable         (foldr, forM_, toList)
+import           Data.Function         (flip, ($), (.))
+import           Data.Functor          ((<$>))
+import           Data.Int              (Int)
+import           Data.List             (any, concatMap, filter, isInfixOf)
+import qualified Data.Map.Strict       as Map
+import           Data.Maybe            (Maybe (Just, Nothing), catMaybes,
+                                        fromJust)
+import           Data.Monoid           (Monoid, mappend, mempty, (<>))
+import           Data.Ord              ((<))
+import qualified Data.Set              as Set
+import           Data.String           (IsString (fromString), String)
+import qualified Data.Text             as Text
+import           Data.Thyme.Calendar   (Day, gregorian, _ymdDay, _ymdMonth,
+                                        _ymdYear)
+import           Data.Thyme.Clock      (UTCTime, _utctDay, _utctDayTime)
+import           Data.Thyme.LocalTime  (TimeOfDay (..), timeOfDay)
+import           Data.Traversable      (traverse)
+import           Data.Tuple            (fst)
+import           IcalBot.Appointment   (AppointedTime (OnlyStart, Range),
+                                        Appointment,
+                                        DateOrDateTime (AllDay, AtPoint),
+                                        fromIcal, ieSummary, ieTime, ieUid)
+import           IcalBot.MatrixMessage (MatrixMessage, plainMessage)
+import           IcalBot.Util          (listDirectory, showException)
+import           Prelude               (undefined)
+import           System.FilePath       (FilePath)
+import           System.IO             (IO, hPutStrLn, stderr)
+import           Text.ICalendar.Parser (parseICalendarFile)
+import           Text.ICalendar.Types  (VCalendar (vcEvents), VEvent)
+import           Text.Show             (Show, show)
 
 type EventID = Text.Text
 
 data EventDB = EventDB (Map.Map EventID Appointment)
+             deriving(Eq, Show)
+
+instance Monoid EventDB where
+  mempty = EventDB mempty
+  (EventDB a) `mappend` (EventDB b) = EventDB (a `mappend` b)
 
 veventsInCals :: [VCalendar] -> [VEvent]
 veventsInCals = concatMap (toList . vcEvents)
@@ -108,7 +111,7 @@ timeOfDayToText (TimeOfDay hour minute _) =
       minutePadded = if minute < 10 then "0" <> minuteText else minuteText
   in hourText <> ":" <> minutePadded <> " Uhr"
 
-formatTime :: InternalTime -> Text.Text
+formatTime :: AppointedTime -> Text.Text
 formatTime (OnlyStart dateOrDt) = formatDateOrDateTime dateOrDt
 formatTime (Range start end)    = "Von " <> formatDateOrDateTime start <> " bis " <> formatDateOrDateTime end
 
@@ -120,11 +123,11 @@ formatDiffAsText (DiffNew e)      = "Neuer Termin: " <> formatEventAsText e
 formatDiffAsText (DiffDeleted e)  = "Termin entfernt: " <> formatEventAsText e
 formatDiffAsText (DiffModified e) = "Termin anders: " <> formatEventAsText e
 
-formatDiffs :: [EventDifference] -> Maybe IncomingMessage
+formatDiffs :: [EventDifference] -> Maybe MatrixMessage
 formatDiffs [] = Nothing
 formatDiffs xs = Just (plainMessage (Text.intercalate "," (formatDiffAsText <$> xs)))
 
-formatEvents :: [Appointment] -> Maybe IncomingMessage
+formatEvents :: [Appointment] -> Maybe MatrixMessage
 formatEvents [] = Nothing
 formatEvents xs = Just (plainMessage (Text.intercalate "," (formatEventAsText <$> xs)))
 
@@ -140,6 +143,9 @@ traverseCalFiles files = (flip traverse) files $ \fn -> do
 validEventPath :: FilePath -> Bool
 validEventPath e = not (any (`isInfixOf` e) [".Radicale.cache",".Radicale.tmp",".Radicale.props"])
 
+eventDBFromList :: [Appointment] -> EventDB
+eventDBFromList = EventDB . foldr (\e -> Map.insert (e ^. ieUid) e) mempty
+
 eventDBFromFS :: FilePath -> IO EventDB
 eventDBFromFS icalDir = do
   files <- filter validEventPath <$> listDirectory icalDir
@@ -147,13 +153,10 @@ eventDBFromFS icalDir = do
   let (lefts,rights) = partitionEithers eithers
   -- print all errors, then ignore
   forM_ lefts (hPutStrLn stderr)
-  let events :: [Appointment]
-      events = join rights
-      insertion e = Map.insert (e ^. ieUid) e
-  pure (EventDB (foldr insertion mempty events))
+  pure (eventDBFromList (join rights))
 
 nextNotification :: EventDB -> [EventID] -> Maybe (UTCTime, [EventID])
 nextNotification = undefined
 
-formatEventsUID :: EventDB -> [EventID] -> Maybe IncomingMessage
+formatEventsUID :: EventDB -> [EventID] -> Maybe MatrixMessage
 formatEventsUID (EventDB m) uids = formatEvents (catMaybes (flipLook m <$> uids))

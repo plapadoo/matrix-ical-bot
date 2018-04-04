@@ -1,39 +1,37 @@
 module Main where
 
-import           Control.Applicative           (pure)
-import           Control.Concurrent            (ThreadId, forkIO, killThread,
-                                                threadDelay)
-import           Control.Concurrent.MVar       (MVar, modifyMVar_, newEmptyMVar,
-                                                putMVar)
-import           Control.Lens                  ((^.))
-import           Control.Monad                 (void)
-import           Data.AffineSpace              ((.-.))
-import           Data.Bool                     (Bool (..))
-import           Data.Foldable                 (for_)
-import           Data.Function                 (const, ($), (.))
-import           Data.Maybe                    (Maybe (..))
-import           Data.Monoid                   (mempty)
-import qualified Data.Text.IO                  as TextIO
-import           Data.Thyme.Clock              (getCurrentTime, microseconds)
-import           IcalBot.EventDB               (EventDB, EventID, compareDB,
-                                                eventDBFromFS, formatDiffs,
-                                                formatEventsUID,
-                                                nextNotification)
-import           IcalBot.MatrixIncomingMessage (IncomingMessage (..),
-                                                incomingMessageToText)
-import           Prelude                       (fromIntegral)
-import           ProgramOptions                (poDirectory, readProgramOptions)
+import           Control.Applicative     (pure)
+import           Control.Concurrent      (ThreadId, forkIO, killThread,
+                                          threadDelay)
+import           Control.Concurrent.MVar (MVar, modifyMVar_, newEmptyMVar,
+                                          putMVar)
+import           Control.Lens            ((^.))
+import           Control.Monad           (void)
+import           Data.AffineSpace        ((.-.))
+import           Data.Bool               (Bool (..))
+import           Data.Foldable           (for_)
+import           Data.Function           (const, ($), (.))
+import           Data.Maybe              (Maybe (..))
+import           Data.Monoid             (mempty)
+import qualified Data.Text.IO            as TextIO
+import           Data.Thyme.Clock        (getCurrentTime, microseconds)
+import           IcalBot.EventDB         (EventDB, EventID, compareDB,
+                                          eventDBFromFS, formatDiffs,
+                                          formatEventsUID, nextNotification)
+import           IcalBot.MatrixMessage   (MatrixMessage (..),
+                                          incomingMessageToText)
+import           Prelude                 (fromIntegral)
+import           ProgramOptions          (poDirectory, readProgramOptions)
 import           System.FilePath
-import           System.FSNotify               (Event (..), watchTree,
-                                                withManager)
-import           System.IO                     (BufferMode (NoBuffering), IO,
-                                                hSetBuffering, stdout)
+import           System.FSNotify         (Event (..), watchTree, withManager)
+import           System.IO               (BufferMode (NoBuffering), IO,
+                                          hSetBuffering, stdout)
 
 newtype WaitJob = WaitJob { getWaitTid :: ThreadId }
 
 data ProgramState = ProgramState EventDB FilePath (Maybe WaitJob)
 
-sendMessage :: IncomingMessage -> IO ()
+sendMessage :: MatrixMessage -> IO ()
 sendMessage = TextIO.putStrLn . incomingMessageToText
 
 newWaitJob :: EventDB -> MVar ProgramState -> [EventID] -> IO (Maybe WaitJob)
