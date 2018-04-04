@@ -1,54 +1,48 @@
 {-# LANGUAGE OverloadedStrings #-}
-module MatrixIcal where
+module IcalBot.API where
 
-import           Control.Applicative            (pure)
-import           Control.Exception              (catch)
-import           Control.Lens                   (from, view, (^.))
-import           Control.Monad                  (join)
-import           Data.Bool                      (Bool (..), not)
-import           Data.Default                   (def)
-import           Data.Either                    (Either (..), partitionEithers)
-import           Data.Eq                        (Eq, (==))
-import           Data.Foldable                  (concatMap, foldMap, forM_)
-import           Data.Function                  (flip, ($), (.))
-import           Data.Functor                   ((<$>))
-import           Data.Int                       (Int)
-import           Data.List                      (any, filter, isInfixOf)
-import           Data.Map.Lazy                  (toList)
-import           Data.Maybe                     (Maybe (..), catMaybes)
-import           Data.Monoid                    (Monoid, (<>))
-import           Data.Ord                       (Ord, comparing, (<), (>))
-import           Data.String                    (IsString (fromString), String)
-import qualified Data.Text                      as StrictText
-import qualified Data.Text.Lazy                 as LazyText
-import           Data.Thyme.Calendar            (Day, gregorian, _ymdDay,
-                                                 _ymdMonth, _ymdYear)
-import           Data.Thyme.Clock               (UTCTime, getCurrentTime,
-                                                 _utctDay, _utctDayTime,
-                                                 _utctDayTime)
-import           Data.Thyme.LocalTime           (LocalTime (..), TimeOfDay (..),
-                                                 addMinutes, midnight,
-                                                 timeOfDay, utc, utcLocalTime,
-                                                 _localDay)
-import           Data.Thyme.Time.Core           (toThyme)
-import           Data.Traversable               (traverse)
-import           Data.Tuple                     (fst, snd)
-import           Lucid                          (Html)
-import           MatrixIcalUtil                 (listDirectory, minimumBySafe,
-                                                 showException)
-import           Prelude                        (pred, succ, (*))
-import           System.FSNotify                (Event (..))
-import           System.IO                      (FilePath, IO, hPutStrLn,
-                                                 stderr)
-import           Text.ICalendar.Parser          (parseICalendarFile)
-import           Text.ICalendar.Types           (DTEnd (..), DTStart (..),
-                                                 Date (..), DateTime (..),
-                                                 VCalendar, VEvent,
-                                                 summaryValue, vcEvents,
-                                                 veDTStart, veSummary)
-import           Text.Show                      (show)
-import           Web.Matrix.Bot.IncomingMessage (IncomingMessage,
-                                                 constructIncomingMessage)
+import           Control.Applicative           (pure)
+import           Control.Exception             (catch)
+import           Control.Lens                  (from, view, (^.))
+import           Control.Monad                 (join)
+import           Data.Bool                     (Bool (..), not)
+import           Data.Default                  (def)
+import           Data.Either                   (Either (..), partitionEithers)
+import           Data.Eq                       (Eq, (==))
+import           Data.Foldable                 (concatMap, foldMap, forM_)
+import           Data.Function                 (flip, ($), (.))
+import           Data.Functor                  ((<$>))
+import           Data.Int                      (Int)
+import           Data.List                     (any, filter, isInfixOf)
+import           Data.Map.Lazy                 (toList)
+import           Data.Maybe                    (Maybe (..), catMaybes)
+import           Data.Monoid                   (Monoid, (<>))
+import           Data.Ord                      (Ord, comparing, (<), (>))
+import           Data.String                   (IsString (fromString), String)
+import qualified Data.Text                     as StrictText
+import qualified Data.Text.Lazy                as LazyText
+import           Data.Thyme.Calendar           (Day, gregorian, _ymdDay,
+                                                _ymdMonth, _ymdYear)
+import           Data.Thyme.Clock              (UTCTime, getCurrentTime,
+                                                _utctDay, _utctDayTime)
+import           Data.Thyme.LocalTime          (LocalTime (..), TimeOfDay (..),
+                                                addMinutes, midnight, timeOfDay,
+                                                utc, utcLocalTime, _localDay)
+import           Data.Thyme.Time.Core          (toThyme)
+import           Data.Traversable              (traverse)
+import           Data.Tuple                    (fst, snd)
+import           IcalBot.MatrixIncomingMessage (IncomingMessage (..))
+import           IcalBot.Util                  (listDirectory, minimumBySafe,
+                                                showException)
+import           Prelude                       (pred, succ, (*))
+import           System.FSNotify               (Event (..))
+import           System.IO                     (FilePath, IO, hPutStrLn, stderr)
+import           Text.ICalendar.Parser         (parseICalendarFile)
+import           Text.ICalendar.Types          (DTEnd (..), DTStart (..),
+                                                Date (..), DateTime (..),
+                                                VCalendar, VEvent, summaryValue,
+                                                vcEvents, veDTStart, veSummary)
+import           Text.Show                     (show)
 
 parseICalendarFileSafe :: FilePath -> IO (Either String [VCalendar])
 parseICalendarFileSafe fn = (fst <$>) <$> parseICalendarFile def fn `catch` (pure . Left . showException)
@@ -56,22 +50,22 @@ parseICalendarFileSafe fn = (fst <$>) <$> parseICalendarFile def fn `catch` (pur
 veventsInCals :: [VCalendar] -> [VEvent]
 veventsInCals = concatMap ((snd <$>) . toList . vcEvents)
 
-processIcalFile :: FilePath -> (IncomingMessage StrictText.Text (Html ()) -> IO ()) -> StrictText.Text -> IO ()
-processIcalFile fn mySendMessage mode = do
+processIcalFile :: FilePath -> StrictText.Text -> IO [IncomingMessage]
+processIcalFile fn mode = do
   result <- parseICalendarFileSafe fn
   case result of
     Left e ->
       let errorMessage = "error reading ical file “" <> fromString fn <> "”: " <> fromString e
-      in mySendMessage (constructIncomingMessage errorMessage Nothing)
+      in pure [(IncomingMessage errorMessage Nothing)]
     Right vcals ->
       let
           appendMode :: StrictText.Text -> StrictText.Text
           appendMode x = mode <> ": " <> x
-          simpleMessage :: StrictText.Text -> IncomingMessage StrictText.Text (Html ())
-          simpleMessage = flip constructIncomingMessage Nothing
-          forEvent :: VEvent -> IO ()
-          forEvent = mySendMessage . simpleMessage . appendMode . LazyText.toStrict . formatEvent
-      in foldMap forEvent (veventsInCals vcals)
+          simpleMessage :: StrictText.Text -> IncomingMessage
+          simpleMessage = flip IncomingMessage Nothing
+          forEvent :: VEvent -> [IncomingMessage]
+          forEvent = pure . simpleMessage . appendMode . LazyText.toStrict . formatEvent
+      in pure (concatMap forEvent (veventsInCals vcals))
 
 eventPath :: Event -> FilePath
 eventPath (Added fn _)    = fn
@@ -126,7 +120,7 @@ translateStart now (DTStartDateTime (FloatingDateTime localTime) _) = dayToStart
 translateStart now (DTStartDateTime (UTCDateTime utcTime) _) = dayToStart now (toThyme utcTime ^. _utctDay)
 translateStart now (DTStartDateTime (ZonedDateTime localTime _) _) = dayToStart now (toThyme localTime ^. _localDay)
 
-latestEvent' :: UTCTime -> [VCalendar] -> Maybe (UTCTime,LazyText.Text)
+latestEvent' :: UTCTime -> [VCalendar] -> [(UTCTime,LazyText.Text)]
 latestEvent' now vcals =
   let
       processVEvent :: VEvent -> Maybe (UTCTime,LazyText.Text)
@@ -134,9 +128,12 @@ latestEvent' now vcals =
         start <- veDTStart e
         timerTime <- translateStart now start
         pure (timerTime,formatEvent e)
-  in minimumBySafe (comparing fst) (catMaybes (processVEvent <$> veventsInCals vcals))
+      startTimesAndEvents = catMaybes (processVEvent <$> veventsInCals vcals)
+      minTime = minimumBySafe (comparing fst) startTimesAndEvents
+  in
+    foldMap (\m -> filter (== m) startTimesAndEvents) minTime
 
-latestEvent :: FilePath -> IO (Maybe (UTCTime,LazyText.Text))
+latestEvent :: FilePath -> IO [(UTCTime,LazyText.Text)]
 latestEvent icalDir = do
   files <- filter validEventPath <$> listDirectory icalDir
   eithers <- traverse parseICalendarFileSafe files

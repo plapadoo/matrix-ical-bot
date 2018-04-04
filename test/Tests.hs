@@ -1,3 +1,16 @@
+import           System.IO  (IO)
+import           Test.Tasty (TestTree, defaultMain, testGroup)
+
+unitTests :: TestTree
+unitTests =
+  testGroup
+    "Unit tests"
+    []
+
+main :: IO ()
+main = defaultMain unitTests
+
+{-
 import           Data.Function       (($))
 import           Data.Functor        ((<$>))
 import           Data.Maybe          (Maybe (Just, Nothing))
@@ -68,3 +81,4 @@ dayToStartInPast :: TestTree
 dayToStartInPast =
   testCase "date way in the future should return" $
     dayToStartString "1987-08-21T00:00:00" "1987-08-19" @?= Nothing
+-}

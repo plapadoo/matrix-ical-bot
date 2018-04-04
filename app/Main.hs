@@ -1,81 +1,81 @@
 module Main where
 
-import           Config                         (Config, configBotUrl,
-                                                 configIcalDir, configRoom)
-import           Control.Applicative            (pure)
-import           Control.Concurrent             (Chan, ThreadId, forkIO,
-                                                 killThread, newChan, readChan,
-                                                 threadDelay)
-import           Control.Lens                   ((^.))
-import           Control.Monad                  (void, when)
-import           Data.AffineSpace               ((.-.))
-import           Data.Bool                      (Bool (..))
-import           Data.Foldable                  (for_)
-import           Data.Function                  (const, ($))
-import           Data.Maybe                     (Maybe (..))
-import           Data.Monoid                    ((<>))
-import           Data.String                    (IsString (fromString))
-import qualified Data.Text.Lazy                 as LazyText
-import           Data.Thyme.Clock               (getCurrentTime, microseconds)
-import           Dhall                          (auto, input)
-import           MatrixIcal                     (eventPath, latestEvent,
-                                                 processIcalFile,
-                                                 validEventPath)
-import           MatrixIcalUtil                 (maybeJust)
-import           Prelude                        (fromIntegral)
-import           System.FSNotify                (Event (..), watchTreeChan,
-                                                 withManager)
-import           System.IO                      (IO, putStrLn)
-import           Text.Show                      (show)
-import           Web.Matrix.Bot.API             (sendMessage)
-import           Web.Matrix.Bot.IncomingMessage (constructIncomingMessage)
+import           Control.Applicative           (pure)
+import           Control.Concurrent            (ThreadId, forkIO, killThread,
+                                                threadDelay)
+import           Control.Concurrent.MVar       (MVar, modifyMVar_, newEmptyMVar,
+                                                putMVar)
+import           Control.Lens                  ((^.))
+import           Control.Monad                 (void)
+import           Data.AffineSpace              ((.-.))
+import           Data.Bool                     (Bool (..))
+import           Data.Foldable                 (for_)
+import           Data.Function                 (const, ($), (.))
+import           Data.Maybe                    (Maybe (..))
+import           Data.Monoid                   (mempty)
+import qualified Data.Text.IO                  as TextIO
+import           Data.Thyme.Clock              (getCurrentTime, microseconds)
+import           IcalBot.EventDB               (EventDB, EventID, compareDB,
+                                                eventDBFromFS, formatDiffs,
+                                                formatEventsUID,
+                                                nextNotification)
+import           IcalBot.MatrixIncomingMessage (IncomingMessage (..),
+                                                incomingMessageToText)
+import           Prelude                       (fromIntegral)
+import           ProgramOptions                (poDirectory, readProgramOptions)
+import           System.FilePath
+import           System.FSNotify               (Event (..), watchTree,
+                                                withManager)
+import           System.IO                     (BufferMode (NoBuffering), IO,
+                                                hSetBuffering, stdout)
 
-processEvent :: Config -> Event -> IO ()
-processEvent config event = do
-  let mySendMessage m = void $ sendMessage (configBotUrl config) (configRoom config) m
-  case event of
-    Added fn _    -> processIcalFile fn mySendMessage "added"
-    Modified fn _ -> processIcalFile fn mySendMessage "modified"
-    Removed fn _  ->
-      let message = constructIncomingMessage ("ical file “"<> fromString fn <>"” was removed") Nothing
-      in mySendMessage message
+newtype WaitJob = WaitJob { getWaitTid :: ThreadId }
 
-newWaitJob :: Config -> IO (Maybe ThreadId)
-newWaitJob config = do
-  le <- latestEvent (configIcalDir config)
-  putStrLn ("latest event: " <> show le)
-  maybeJust le (pure Nothing) $ \(pointInFuture, message) -> do
-    backThread <- forkIO $ do
-      ct <- getCurrentTime
-      let diff = pointInFuture .-. ct
-      void (sendMessage (configBotUrl config) (configRoom config) (constructIncomingMessage ("Next appointment: " <> (LazyText.toStrict message)) Nothing))
-      putStrLn ("Waiting until " <> show pointInFuture)
-      threadDelay (fromIntegral (diff ^. microseconds))
-      void (sendMessage (configBotUrl config) (configRoom config) (constructIncomingMessage (LazyText.toStrict message) Nothing))
-    pure (Just backThread)
+data ProgramState = ProgramState EventDB FilePath (Maybe WaitJob)
+
+sendMessage :: IncomingMessage -> IO ()
+sendMessage = TextIO.putStrLn . incomingMessageToText
+
+newWaitJob :: EventDB -> MVar ProgramState -> [EventID] -> IO (Maybe WaitJob)
+newWaitJob db stateVar excludeUids = do
+  case nextNotification db excludeUids of
+    Nothing -> pure Nothing
+    Just (pointInFuture, uids) -> do
+      backThread <- forkIO $ do
+        ct <- getCurrentTime
+        let diff = pointInFuture .-. ct
+        threadDelay (fromIntegral (diff ^. microseconds))
+        modifyMVar_ stateVar $ \(ProgramState db' dir _) -> do
+          newWait <- newWaitJob db' stateVar uids
+          for_ (formatEventsUID db' uids) sendMessage
+          pure (ProgramState db' dir newWait)
+      pure (Just (WaitJob backThread))
+
+eventHandler :: MVar ProgramState -> Event -> IO ()
+eventHandler stateVar event = modifyMVar_ stateVar (eventHandler' stateVar event)
+
+eventHandler' :: MVar ProgramState -> Event -> ProgramState -> IO ProgramState
+eventHandler' stateVar _ (ProgramState db dir wait) = do
+  newDB <- eventDBFromFS dir
+  for_ (formatDiffs (db `compareDB` newDB)) sendMessage
+  for_ wait (killThread . getWaitTid)
+  newWait <- newWaitJob newDB stateVar mempty
+  pure (ProgramState newDB dir newWait)
 
 main :: IO ()
 main = do
-  config <- input auto "/etc/matrix-bot/matrix-ical-bot.dhall"
+  hSetBuffering stdout NoBuffering
+  po <- readProgramOptions
+  let dir = po ^. poDirectory
+  db <- eventDBFromFS dir
+  stateVar <- newEmptyMVar
+  waitJob <- newWaitJob db stateVar mempty
+  putMVar stateVar (ProgramState db dir waitJob)
   withManager $ \mgr -> do
-    eventChan <- newChan
-
     -- start a watching job (in the background)
-    putStrLn "starting fs watch..."
-    _ <- watchTreeChan
+    TextIO.putStrLn "starting fs watch..."
+    void $ watchTree
       mgr
-      (configIcalDir config)
+      dir
       (const True)
-      eventChan
-
-    waitJob <- newWaitJob config
-    mainLoop config eventChan waitJob
-
-mainLoop :: Config -> Chan Event -> Maybe ThreadId -> IO ()
-mainLoop config eventChan waitJob = do
-  putStrLn "waiting for next FS event..."
-  e <- readChan eventChan
-  when (validEventPath (eventPath e)) (processEvent config e)
-  for_ waitJob killThread
-  newJob <- newWaitJob config
-  mainLoop config eventChan newJob
+      (eventHandler stateVar)

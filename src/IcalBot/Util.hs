@@ -1,4 +1,4 @@
-module MatrixIcalUtil where
+module IcalBot.Util where
 
 import           Control.Exception (SomeException)
 import           Control.Monad     (Monad, when)
