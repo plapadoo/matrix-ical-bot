@@ -1,3 +1,4 @@
+-- |Functions to format the internal data structures and date/times
 module IcalBot.Formatting(
     dayToText
   , utcTimeToText

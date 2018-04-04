@@ -1,3 +1,4 @@
+-- |Provide the EventDB type which provides a context for comparing events
 module IcalBot.EventDB(
     EventDB
   , EventID
@@ -40,8 +41,11 @@ import           Text.ICalendar.Parser (parseICalendarFile)
 import           Text.ICalendar.Types  (VCalendar (vcEvents), VEvent)
 import           Text.Show             (Show)
 
+-- |Wrapper for an event UID (could be a newtype, I'm just lazy)
 type EventID = Text.Text
 
+-- |A collection of Appointments (or events, which is shorter), with
+-- the UID as primary key
 data EventDB = EventDB (Map.Map EventID Appointment)
              deriving(Eq, Show)
 
@@ -55,6 +59,8 @@ veventsInCals = concatMap (toList . vcEvents)
 parseICalendarFileSafe :: FilePath -> IO (Either String [VCalendar])
 parseICalendarFileSafe fn = (fst <$>) <$> parseICalendarFile def fn `catch` (pure . Left . showException)
 
+-- |Contrary to the name, this isn't a difference of an event, but of
+-- two event collections, which resulted in a single event difference.
 data EventDifference = DiffNew Appointment
                      | DiffDeleted Appointment
                      | DiffModified Appointment
@@ -63,6 +69,7 @@ data EventDifference = DiffNew Appointment
 flipLook :: Map.Map EventID a -> EventID -> Maybe a
 flipLook = flip Map.lookup
 
+-- |Compare two event databases, return differences
 compareDB :: EventDB -> EventDB -> [EventDifference]
 compareDB (EventDB old) (EventDB new) =
   let deleted = DiffDeleted <$> Map.elems (old `Map.difference` new)
@@ -85,9 +92,11 @@ traverseCalFiles files = (flip traverse) files $ \fn -> do
 validEventPath :: FilePath -> Bool
 validEventPath e = not (any (`isInfixOf` e) [".Radicale.cache",".Radicale.tmp",".Radicale.props"])
 
+-- |Create an event data base from a plain list
 eventDBFromList :: [Appointment] -> EventDB
 eventDBFromList = EventDB . foldr (\e -> Map.insert (e ^. ieUid) e) mempty
 
+-- |Create an event data base from a single file
 eventDBFromFile :: FilePath -> IO EventDB
 eventDBFromFile icalFile = do
   eithers <- traverseCalFiles [icalFile]
@@ -96,6 +105,7 @@ eventDBFromFile icalFile = do
   forM_ lefts (hPutStrLn stderr)
   pure (eventDBFromList (join rights))
 
+-- |Create an event data base from a directory of ical files
 eventDBFromFS :: FilePath -> IO EventDB
 eventDBFromFS icalDir = do
   files <- filter validEventPath <$> listDirectory icalDir
@@ -105,9 +115,11 @@ eventDBFromFS icalDir = do
   forM_ lefts (hPutStrLn stderr)
   pure (eventDBFromList (join rights))
 
+-- |Return the next events to be notified of
 nextNotification :: EventDB -> [EventID] -> Maybe (UTCTime, [EventID])
 nextNotification = undefined
 
+-- |Get some events by their primary key
 eventsByUID :: EventDB -> [EventID] -> [Appointment]
 eventsByUID (EventDB db) uids = catMaybes (flipLook db <$> uids)
 
