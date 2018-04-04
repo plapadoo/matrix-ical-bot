@@ -1,6 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
-module IcalBot.InternalEvent(
-    InternalEvent(..)
+module IcalBot.Appointment(
+    Appointment(..)
   , iePath
   , ieUid
   , ieTime
@@ -79,7 +79,7 @@ data InternalTime = OnlyStart DateOrDateTime
 -- date formats in ical). Here, we are deliberately ignoring other
 -- types of "stuff" in ical, like "free busys", "journals", "todos",
 -- ...
-data InternalEvent = InternalEvent {
+data Appointment = Appointment {
   -- |Path of the file from where the event originated from (this
   -- assumes that stuff comes from files, only)
     _iePath    :: FilePath
@@ -91,7 +91,7 @@ data InternalEvent = InternalEvent {
   , _ieUid     :: Text.Text
   } deriving(Show, Eq)
 
-makeLenses ''InternalEvent
+makeLenses ''Appointment
 
 -- |Convert a start and an optional end (or a duration) to the internal format
 timeFromIcal :: DTStart -> Maybe (Either DTEnd DurationProp) -> IO InternalTime
@@ -114,14 +114,14 @@ timeFromIcal start end = do
 -- |Convert an event from a file to the internal format. This might
 -- return Nothing in case the format isn't processable later on (for
 -- example, if we have no start date)
-fromIcal :: FilePath -> VEvent -> IO (Maybe InternalEvent)
+fromIcal :: FilePath -> VEvent -> IO (Maybe Appointment)
 fromIcal fn e = case veDTStart e of
   Nothing -> pure Nothing
   Just start -> case veSummary e of
     Nothing -> pure Nothing
     Just summary -> do
       t <- timeFromIcal start (veDTEndDuration e)
-      pure $ Just $ InternalEvent {
+      pure $ Just $ Appointment {
         _iePath = fn
         , _ieSummary = (LazyText.toStrict . summaryValue) summary
         , _ieTime = t

@@ -38,8 +38,8 @@ import           Data.Thyme.Clock              (UTCTime, _utctDay, _utctDayTime)
 import           Data.Thyme.LocalTime          (TimeOfDay (..), timeOfDay)
 import           Data.Traversable              (traverse)
 import           Data.Tuple                    (fst)
-import           IcalBot.InternalEvent         (DateOrDateTime (AllDay, AtPoint),
-                                                InternalEvent,
+import           IcalBot.Appointment           (Appointment,
+                                                DateOrDateTime (AllDay, AtPoint),
                                                 InternalTime (OnlyStart, Range),
                                                 fromIcal, ieSummary, ieTime,
                                                 ieUid)
@@ -54,7 +54,7 @@ import           Text.Show                     (Show, show)
 
 type EventID = Text.Text
 
-data EventDB = EventDB (Map.Map EventID InternalEvent)
+data EventDB = EventDB (Map.Map EventID Appointment)
 
 veventsInCals :: [VCalendar] -> [VEvent]
 veventsInCals = concatMap (toList . vcEvents)
@@ -62,9 +62,9 @@ veventsInCals = concatMap (toList . vcEvents)
 parseICalendarFileSafe :: FilePath -> IO (Either String [VCalendar])
 parseICalendarFileSafe fn = (fst <$>) <$> parseICalendarFile def fn `catch` (pure . Left . showException)
 
-data EventDifference = DiffNew InternalEvent
-                     | DiffDeleted InternalEvent
-                     | DiffModified InternalEvent
+data EventDifference = DiffNew Appointment
+                     | DiffDeleted Appointment
+                     | DiffModified Appointment
                      deriving(Show)
 
 flipLook :: Map.Map EventID a -> EventID -> Maybe a
@@ -112,7 +112,7 @@ formatTime :: InternalTime -> Text.Text
 formatTime (OnlyStart dateOrDt) = formatDateOrDateTime dateOrDt
 formatTime (Range start end)    = "Von " <> formatDateOrDateTime start <> " bis " <> formatDateOrDateTime end
 
-formatEventAsText :: InternalEvent -> Text.Text
+formatEventAsText :: Appointment -> Text.Text
 formatEventAsText e = (e ^. ieSummary) <> " " <> formatTime (e ^. ieTime)
 
 formatDiffAsText :: EventDifference -> Text.Text
@@ -124,11 +124,11 @@ formatDiffs :: [EventDifference] -> Maybe IncomingMessage
 formatDiffs [] = Nothing
 formatDiffs xs = Just (plainMessage (Text.intercalate "," (formatDiffAsText <$> xs)))
 
-formatEvents :: [InternalEvent] -> Maybe IncomingMessage
+formatEvents :: [Appointment] -> Maybe IncomingMessage
 formatEvents [] = Nothing
 formatEvents xs = Just (plainMessage (Text.intercalate "," (formatEventAsText <$> xs)))
 
-traverseCalFiles :: [FilePath] -> IO [Either String [InternalEvent]]
+traverseCalFiles :: [FilePath] -> IO [Either String [Appointment]]
 traverseCalFiles files = (flip traverse) files $ \fn -> do
   parsed <- parseICalendarFileSafe fn
   case parsed of
@@ -147,7 +147,7 @@ eventDBFromFS icalDir = do
   let (lefts,rights) = partitionEithers eithers
   -- print all errors, then ignore
   forM_ lefts (hPutStrLn stderr)
-  let events :: [InternalEvent]
+  let events :: [Appointment]
       events = join rights
       insertion e = Map.insert (e ^. ieUid) e
   pure (EventDB (foldr insertion mempty events))

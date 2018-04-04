@@ -28,7 +28,7 @@ library
                      , IcalBot.Util
                      , IcalBot.MatrixIncomingMessage
                      , IcalBot.EventDB
-                     , IcalBot.InternalEvent
+                     , IcalBot.Appointment
   build-depends: 
       base
     , iCalendar
