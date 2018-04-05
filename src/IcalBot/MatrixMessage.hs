@@ -3,6 +3,7 @@ module IcalBot.MatrixMessage(
     MatrixMessage(..)
   , incomingMessageToText
   , plainMessage
+  , messagePlainText
   , plainMessageStr) where
 
 import           Data.Foldable  (foldMap)
@@ -19,6 +20,9 @@ import           Text.Show      (Show)
 -- |A matrix.org message with a plain text and a HTML part
 data MatrixMessage = MatrixMessage Text.Text (Maybe (Html ()))
                      deriving(Show)
+
+messagePlainText :: MatrixMessage -> Text.Text
+messagePlainText (MatrixMessage pt _) = pt
 
 -- |Construct a plain-text matrix.org message from a string
 plainMessageStr :: String -> MatrixMessage

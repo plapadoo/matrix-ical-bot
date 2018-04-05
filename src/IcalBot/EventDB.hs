@@ -2,18 +2,22 @@
 module IcalBot.EventDB(
     EventDB
   , EventID
+  , EventIDSet
+  , filterDB
+  , filterDBAfter
+  , daysGrouped
+  , collect
+  , collectFlat
   , eventDBFromFS
   , compareDB
   , eventDBFromList
   , eventDBFromFile
-  , eventsByUID
-  , EventDifference(..)
-  , nextNotification) where
+  , EventDifference(..)) where
 
 
 import           Control.Applicative   (pure)
 import           Control.Exception     (catch)
-import           Control.Lens          ((^.))
+import           Control.Lens          (view, (^.))
 import           Control.Monad         (join)
 import           Data.Bool             (Bool, not)
 import           Data.Default          (def)
@@ -26,15 +30,17 @@ import           Data.List             (any, concatMap, filter, isInfixOf)
 import qualified Data.Map.Strict       as Map
 import           Data.Maybe            (Maybe, catMaybes, fromJust)
 import           Data.Monoid           (Monoid, mappend, mempty, (<>))
+import           Data.Ord              ((>=))
 import qualified Data.Set              as Set
 import           Data.String           (String)
 import qualified Data.Text             as Text
+import           Data.Thyme.Calendar   (Day)
 import           Data.Thyme.Clock      (UTCTime)
 import           Data.Traversable      (traverse)
 import           Data.Tuple            (fst)
-import           IcalBot.Appointment   (Appointment, fromIcal, ieUid)
-import           IcalBot.Util          (listDirectory, showException)
-import           Prelude               (undefined)
+import           IcalBot.Appointment   (Appointment, fromIcal, ieStart,
+                                        ieStartDay, ieTime, ieUid)
+import           IcalBot.Util          (Endo, listDirectory, showException)
 import           System.FilePath       (FilePath)
 import           System.IO             (IO, hPutStrLn, stderr)
 import           Text.ICalendar.Parser (parseICalendarFile)
@@ -43,6 +49,9 @@ import           Text.Show             (Show)
 
 -- |Wrapper for an event UID (could be a newtype, I'm just lazy)
 type EventID = Text.Text
+
+-- |Set of IDs (to make implementation interchangeable)
+type EventIDSet = Set.Set EventID
 
 -- |A collection of Appointments (or events, which is shorter), with
 -- the UID as primary key
@@ -74,7 +83,7 @@ compareDB :: EventDB -> EventDB -> [EventDifference]
 compareDB (EventDB old) (EventDB new) =
   let deleted = DiffDeleted <$> Map.elems (old `Map.difference` new)
       inserted = DiffNew <$> Map.elems (new `Map.difference` old)
-      modifiedKeys :: Set.Set EventID
+      modifiedKeys :: EventIDSet
       modifiedKeys = Map.keysSet old `Set.intersection` Map.keysSet new
       modified = Set.filter (\key -> Map.lookup key old /= Map.lookup key new) modifiedKeys
       afterMod = (DiffModified . fromJust . flipLook new) <$> toList modified
@@ -115,11 +124,69 @@ eventDBFromFS icalDir = do
   forM_ lefts (hPutStrLn stderr)
   pure (eventDBFromList (join rights))
 
--- |Return the next events to be notified of
-nextNotification :: EventDB -> [EventID] -> Maybe (UTCTime, [EventID])
-nextNotification = undefined
+filterDB :: EventDB -> (Appointment -> Bool) -> EventDB
+filterDB (EventDB db) f = EventDB (Map.filter f db)
 
--- |Get some events by their primary key
-eventsByUID :: EventDB -> [EventID] -> [Appointment]
-eventsByUID (EventDB db) uids = catMaybes (flipLook db <$> uids)
+filterDBAfter :: EventDB -> UTCTime -> EventDB
+filterDBAfter db now = filterDB db ((>= now) . view (ieTime . ieStart))
+
+daysGrouped :: EventDB -> Map.Map Day [Appointment]
+daysGrouped (EventDB db) =
+  let accum :: Appointment -> Endo (Map.Map Day [Appointment])
+      accum appt = Map.insertWith mappend (appt ^. ieStartDay) [appt]
+  in foldr accum mempty (Map.elems db)
+
+collect :: EventDB -> (Appointment -> a) -> [a]
+collect (EventDB db) f = f <$> Map.elems db
+
+collectFlat :: EventDB -> (Appointment -> [a]) -> [a]
+collectFlat (EventDB db) f = concatMap f (Map.elems db)
+
+
+
+-- |Return the next events to be notified of (using an exclusion filter)
+-- nextAppointmentDay :: EventDB -> EventIDSet -> UTCTime -> Maybe (Day, EventIDSet)
+-- nextAppointmentDay (EventDB db) exclusions start =
+--   let -- filter exclusions
+--       smallerDb :: Map.Map EventID Appointment
+--       smallerDb = Map.restrictKeys db ((Map.keysSet db) `Set.difference` exclusions)
+--       -- filter past events
+--       filtered :: Map.Map EventID Appointment
+--       filtered = Map.filter ((>= start) . appointedTimeStart . view ieTime) smallerDb
+--       nextEvents :: [Appointment]
+--       nextEvents = minimumElementsBy (view (ieTime . to appointedTimeStart . _utctDay)) (Map.elems filtered)
+--   in case nextEvents of
+--        []     -> Nothing
+--        (x:xs) -> Just (x ^. ieTime . to appointedTimeStart . _utctDay, foldMap (Set.singleton . view ieUid) (x:xs))
+
+
+-- beforeEveningThreshold :: TimeOfDay
+-- beforeEveningThreshold = snd ((21*60) `addMinutes` midnight)
+
+-- beforeMorningThreshold :: TimeOfDay
+-- beforeMorningThreshold = snd ((9*60) `addMinutes` midnight)
+
+-- -- |Returns the time and message for the next reminder
+-- nextReminder :: EventDB -> (Day, EventIDSet) -> UTCTime -> (UTCTime, MatrixMessage)
+-- nextReminder db (day, eventIds) now =
+--   let currentDay :: Day
+--       currentDay = now ^. _utctDay
+--       currentTime :: TimeOfDay
+--       currentTime = now ^. _utctDayTime . timeOfDay
+--       utcTime :: Day -> TimeOfDay -> UTCTime
+--       utcTime day tod = localTimeToUTCTime (LocalTime day tod)
+--       dayBeforeThreshold = utcTime (pred day) beforeEveningThreshold
+--       onDayThreshold = utcTime day beforeMorningThreshold
+--   in
+--     if currentDay == day
+--     then if currentTime < beforeMorningThreshold
+--          then Just onDayThreshold
+--          else Nothing
+--     else if succ currentDay == tday
+--          then if currentTime < beforeEveningThreshold
+--               then Just dayBeforeThreshold
+--               else Just onDayThreshold
+--          else if currentDay > tday
+--               then Nothing
+--               else Just dayBeforeThreshold
 

@@ -1,12 +1,15 @@
 {-# LANGUAGE TemplateHaskell #-}
 import           Control.Applicative            (pure)
 import           Data.AdditiveGroup             (zeroV)
+import           Data.Bifunctor                 (second)
+import           Data.Functor                   ((<$>))
 import           Data.String                    (String)
 import qualified Data.Text                      as Text
 import           Data.Thyme.Calendar            (Day)
 import           Data.Thyme.Clock               (UTCTime)
 import           Data.Thyme.Format              (readTime)
-import           Data.Thyme.LocalTime           (TimeOfDay (..))
+import           Data.Thyme.LocalTime           (TimeOfDay (..), utc)
+import           Data.Time.Zones                (loadTZFromDB, utcTZ)
 import           IcalBot.Appointment            (AppointedTime (..),
                                                  Appointment (..),
                                                  DateOrDateTime (..))
@@ -17,6 +20,8 @@ import           IcalBot.Formatting             (dayToText,
                                                  formatDateOrDateTime,
                                                  formatTime, timeOfDayToText,
                                                  utcTimeToText)
+import           IcalBot.MatrixMessage          (messagePlainText, plainMessage)
+import           IcalBot.Scheduling             (collectAppointments)
 import           System.IO                      (IO)
 import           System.Locale                  (defaultTimeLocale)
 import           Test.Framework.Providers.HUnit (testCase)
@@ -108,81 +113,72 @@ case_formatTimeOnlyStart = formatTime (OnlyStart (AllDay (readDayString "2018-10
 
 case_formatTimeRange = formatTime (Range (AllDay (readDayString "2018-10-02")) (AllDay (readDayString "2018-10-03"))) @?= "Vom 2.10.2018 bis 3.10.2018"
 
--- case_formatEventAsText = do
---   undefined
+case_collectAppointsmentsOnlyStartAtPoint = do
+  let start = readTimeString "2017-11-01T10:00:00"
+      now = readTimeString "2017-10-01T10:00:00"
+      firstAppt = Appointment {
+          _iePath = "/some/path.ical"
+        , _ieSummary = "foo"
+        , _ieTime = OnlyStart (AtPoint start)
+        , _ieUid = "uid"
+        }
+      db = eventDBFromList [firstAppt]
+      result = second messagePlainText <$> (collectAppointments db utcTZ now)
+  result @?= [ (readTimeString "2017-11-01T10:00:00", "Beginnt jetzt: foo")
+             , (readTimeString "2017-10-31T20:00:00", "Termin morgen: 10:00 Uhr foo")
+             , (readTimeString "2017-11-01T08:00:00", "Termin heute: 10:00 Uhr foo")
+             ]
+
+case_collectAppointsmentsOnlyStartAtPointEurope = do
+  tz <- loadTZFromDB "Europe/Berlin"
+  let start = readTimeString "2017-11-01T10:00:00"
+      now = readTimeString "2017-10-01T10:00:00"
+      firstAppt = Appointment {
+          _iePath = "/some/path.ical"
+        , _ieSummary = "foo"
+        , _ieTime = OnlyStart (AtPoint start)
+        , _ieUid = "uid"
+        }
+      db = eventDBFromList [firstAppt]
+      result = second messagePlainText <$> (collectAppointments db tz now)
+  result @?= [ (readTimeString "2017-11-01T10:00:00", "Beginnt jetzt: foo")
+             , (readTimeString "2017-10-31T20:00:00", "Termin morgen: 11:00 Uhr foo")
+             , (readTimeString "2017-11-01T08:00:00", "Termin heute: 11:00 Uhr foo")
+             ]
+
+case_collectAppointsmentsOnlyStartAllDay = do
+  let start = readDayString "2017-11-01"
+      now = readTimeString "2017-10-01T10:00:00"
+      firstAppt = Appointment {
+          _iePath = "/some/path.ical"
+        , _ieSummary = "foo"
+        , _ieTime = OnlyStart (AllDay start)
+        , _ieUid = "uid"
+        }
+      db = eventDBFromList [firstAppt]
+      result = second messagePlainText <$> (collectAppointments db utcTZ now)
+  result @?= [ (readTimeString "2017-10-31T20:00:00", "Termin morgen: foo (ganztägig)")
+             , (readTimeString "2017-11-01T08:00:00", "Termin heute: foo (ganztägig)")
+             ]
+
+case_collectAppointsmentsRange = do
+  let start = readTimeString "2017-11-01T10:00:00"
+      end = readTimeString "2017-11-02T11:00:00"
+      now = readTimeString "2017-10-01T10:00:00"
+      firstAppt = Appointment {
+          _iePath = "/some/path.ical"
+        , _ieSummary = "foo"
+        , _ieTime = Range (AtPoint start) (AtPoint end)
+        , _ieUid = "uid"
+        }
+      db = eventDBFromList [firstAppt]
+      result = second messagePlainText <$> (collectAppointments db utcTZ now)
+  result @?= [ (readTimeString "2017-11-01T10:00:00", "Beginnt jetzt: foo")
+             , (readTimeString "2017-11-02T11:00:00", "Endet jetzt: foo")
+             , (readTimeString "2017-10-31T20:00:00", "Termin morgen: 10:00 Uhr foo")
+             , (readTimeString "2017-11-01T08:00:00", "Termin heute: 10:00 Uhr foo")
+             ]
+
 
 main :: IO ()
 main = $(defaultMainGenerator)
-
-{-
-import           Data.Function       (($))
-import           Data.Functor        ((<$>))
-import           Data.Maybe          (Maybe (Just, Nothing))
-import           Data.String         (String)
-import           Data.Thyme.Calendar (Day)
-import           Data.Thyme.Clock    (UTCTime)
-import           Data.Thyme.Format   (formatTime, readTime)
-import           MatrixIcal          (dayToStart)
-import           Prelude             (undefined)
-import           System.IO           (IO)
-import           System.Locale       (defaultTimeLocale)
-import           Test.Tasty          (TestTree, defaultMain, testGroup)
-import           Test.Tasty.HUnit    (testCase, (@?=))
-
-main :: IO ()
-main = defaultMain unitTests
-
-timeFormat :: String
-timeFormat = "%FT%H:%M:%S"
-
-utcTimeToString :: UTCTime -> String
-utcTimeToString = formatTime defaultTimeLocale timeFormat
-
-stringToUtcTime :: String -> UTCTime
-stringToUtcTime = readTime defaultTimeLocale timeFormat
-
-dayFormat :: String
-dayFormat = "%F"
-
-stringToDay :: String -> Day
-stringToDay = readTime defaultTimeLocale dayFormat
-
-unitTests :: TestTree
-unitTests =
-  testGroup
-    "Unit tests"
-    [dayToStartInPast,dayToStartTodayBeforeThreshold,dayToStartTodayAfterThreshold,dayToStartYesterdayBeforeThreshold,dayToStartYesterdayAfterThreshold,dayToStartWayBefore]
-
-dayToStartString :: String -> String -> Maybe String
-dayToStartString now day = utcTimeToString <$> dayToStart (stringToUtcTime now) (stringToDay day)
-
-dayToStartTodayBeforeThreshold :: TestTree
-dayToStartTodayBeforeThreshold =
-  testCase "date is today, but before threshold" $
-    dayToStartString "1987-08-21T02:00:00" "1987-08-21" @?= Just "1987-08-21T09:00:00"
-
-dayToStartTodayAfterThreshold :: TestTree
-dayToStartTodayAfterThreshold =
-  testCase "date is today, but after threshold" $
-    dayToStartString "1987-08-21T12:00:00" "1987-08-21" @?= Nothing
-
-dayToStartWayBefore :: TestTree
-dayToStartWayBefore =
-  testCase "appointment is way in the future" $
-    dayToStartString "1987-08-21T12:00:00" "1987-08-23" @?= Just "1987-08-22T21:00:00"
-
-dayToStartYesterdayBeforeThreshold :: TestTree
-dayToStartYesterdayBeforeThreshold =
-  testCase "date is one day before appointment and before evening threshold" $
-    dayToStartString "1987-08-20T12:00:00" "1987-08-21" @?= Just "1987-08-20T21:00:00"
-
-dayToStartYesterdayAfterThreshold :: TestTree
-dayToStartYesterdayAfterThreshold =
-  testCase "date is one day before appointment and after evening threshold" $
-    dayToStartString "1987-08-20T22:00:00" "1987-08-21" @?= Just "1987-08-21T09:00:00"
-
-dayToStartInPast :: TestTree
-dayToStartInPast =
-  testCase "date way in the future should return" $
-    dayToStartString "1987-08-21T00:00:00" "1987-08-19" @?= Nothing
--}
