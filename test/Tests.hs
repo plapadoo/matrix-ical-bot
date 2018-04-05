@@ -8,7 +8,7 @@ import qualified Data.Text                      as Text
 import           Data.Thyme.Calendar            (Day)
 import           Data.Thyme.Clock               (UTCTime)
 import           Data.Thyme.Format              (readTime)
-import           Data.Thyme.LocalTime           (TimeOfDay (..), utc)
+import           Data.Thyme.LocalTime           (LocalTime, TimeOfDay (..), utc)
 import           Data.Time.Zones                (loadTZFromDB, utcTZ)
 import           IcalBot.Appointment            (AppointedTime (..),
                                                  Appointment (..),
@@ -18,8 +18,8 @@ import           IcalBot.EventDB                (EventDifference (..),
                                                  eventDBFromList)
 import           IcalBot.Formatting             (dayToText,
                                                  formatDateOrDateTime,
-                                                 formatTime, timeOfDayToText,
-                                                 utcTimeToText)
+                                                 formatTime, localTimeToText,
+                                                 timeOfDayToText)
 import           IcalBot.MatrixMessage          (messagePlainText, plainMessage)
 import           IcalBot.Scheduling             (collectAppointments)
 import           System.IO                      (IO)
@@ -30,6 +30,9 @@ import           Test.HUnit                     ((@?=))
 
 readTimeString :: String -> UTCTime
 readTimeString = readTime defaultTimeLocale "%FT%T%Q"
+
+readLocalTimeString :: String -> LocalTime
+readLocalTimeString = readTime defaultTimeLocale "%FT%T%Q"
 
 readDayString :: String -> Day
 readDayString = readTime defaultTimeLocale "%F"
@@ -99,19 +102,19 @@ case_timeOfDayToText =
   let tod = TimeOfDay 16 02 zeroV
   in timeOfDayToText tod @?= "16:02 Uhr"
 
-case_utcTimeToText = utcTimeToText (readTimeString "2018-10-02T16:01:00") @?= "2.10.2018 16:01 Uhr"
+case_localTimeToText = localTimeToText (readLocalTimeString "2018-10-02T16:01:00") @?= "2.10.2018 16:01 Uhr"
 
 case_dayToText = dayToText (readDayString "2018-10-02") @?= "2.10.2018"
 
 case_formatDateOrDateTimeAllDay =
-  formatDateOrDateTime (AllDay (readDayString "2018-10-02")) @?= "2.10.2018"
+  formatDateOrDateTime utcTZ (AllDay (readDayString "2018-10-02")) @?= "2.10.2018"
 
 case_formatDateOrDateTimeAtPoint =
-  formatDateOrDateTime (AtPoint (readTimeString "2018-10-02T16:01:00")) @?= "2.10.2018 16:01 Uhr"
+  formatDateOrDateTime utcTZ (AtPoint (readTimeString "2018-10-02T16:01:00")) @?= "2.10.2018 16:01 Uhr"
 
-case_formatTimeOnlyStart = formatTime (OnlyStart (AllDay (readDayString "2018-10-02"))) @?= "2.10.2018"
+case_formatTimeOnlyStart = formatTime utcTZ (OnlyStart (AllDay (readDayString "2018-10-02"))) @?= "2.10.2018"
 
-case_formatTimeRange = formatTime (Range (AllDay (readDayString "2018-10-02")) (AllDay (readDayString "2018-10-03"))) @?= "Vom 2.10.2018 bis 3.10.2018"
+case_formatTimeRange = formatTime utcTZ (Range (AllDay (readDayString "2018-10-02")) (AllDay (readDayString "2018-10-03"))) @?= "Vom 2.10.2018 bis 3.10.2018"
 
 case_collectAppointsmentsOnlyStartAtPoint = do
   let start = readTimeString "2017-11-01T10:00:00"

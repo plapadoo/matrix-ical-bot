@@ -1,14 +1,13 @@
 -- |Functions to format the internal data structures and date/times
 module IcalBot.Formatting(
     dayToText
-  , utcTimeToText
+  , localTimeToText
   , formatDateOrDateTime
   , timeOfDayToText
   , formatTime
   , formatEventAsText
   , formatDiffAsText
   , formatDiffs
-  , formatEvents
   ) where
 
 import           Control.Lens          ((^.))
@@ -22,14 +21,16 @@ import           Data.String           (IsString (fromString))
 import qualified Data.Text             as Text
 import           Data.Thyme.Calendar   (Day, gregorian, _ymdDay, _ymdMonth,
                                         _ymdYear)
-import           Data.Thyme.Clock      (UTCTime, _utctDay, _utctDayTime)
-import           Data.Thyme.LocalTime  (TimeOfDay (..), timeOfDay)
+import           Data.Thyme.LocalTime  (LocalTime, TimeOfDay (..), _localDay,
+                                        _localTimeOfDay)
+import           Data.Time.Zones       (TZ)
 import           IcalBot.Appointment   (AppointedTime (OnlyStart, Range),
                                         Appointment,
                                         DateOrDateTime (AllDay, AtPoint),
                                         ieSummary, ieTime)
 import           IcalBot.EventDB       (EventDifference (..))
 import           IcalBot.MatrixMessage (MatrixMessage, plainMessage)
+import           IcalBot.Util          (utcTimeAtTz)
 import           Text.Show             (show)
 
 dayToText :: Day -> Text.Text
@@ -37,18 +38,18 @@ dayToText day =
   let ymd = day ^. gregorian
   in Text.pack $ show (ymd ^. _ymdDay) <> "." <> show (ymd ^. _ymdMonth) <> "." <> show (ymd ^. _ymdYear)
 
-utcTimeToText :: UTCTime -> Text.Text
-utcTimeToText t =
+localTimeToText :: LocalTime -> Text.Text
+localTimeToText t =
   let dayText :: Text.Text
-      dayText = dayToText (t ^. _utctDay)
-      dayTimeInt = t ^. _utctDayTime . timeOfDay
+      dayText = dayToText (t ^. _localDay)
+      dayTimeInt = t ^. _localTimeOfDay
       dt :: Text.Text
       dt = timeOfDayToText dayTimeInt
   in dayText <> " " <> dt
 
-formatDateOrDateTime :: DateOrDateTime -> Text.Text
-formatDateOrDateTime (AllDay day)      = dayToText day
-formatDateOrDateTime (AtPoint utcTime) = utcTimeToText utcTime
+formatDateOrDateTime :: TZ -> DateOrDateTime -> Text.Text
+formatDateOrDateTime _ (AllDay day)      = dayToText day
+formatDateOrDateTime tz (AtPoint utcTime) = localTimeToText (utcTimeAtTz tz utcTime)
 
 textShow :: IsString a => Int -> a
 textShow = fromString . show
@@ -60,22 +61,22 @@ timeOfDayToText (TimeOfDay hour minute _) =
       minutePadded = if minute < 10 then "0" <> minuteText else minuteText
   in hourText <> ":" <> minutePadded <> " Uhr"
 
-formatTime :: AppointedTime -> Text.Text
-formatTime (OnlyStart dateOrDt) = formatDateOrDateTime dateOrDt
-formatTime (Range start end)    = "Vom " <> formatDateOrDateTime start <> " bis " <> formatDateOrDateTime end
+formatTime :: TZ -> AppointedTime -> Text.Text
+formatTime tz (OnlyStart dateOrDt) = formatDateOrDateTime tz dateOrDt
+formatTime tz (Range start end)    = "Vom " <> formatDateOrDateTime tz start <> " bis " <> formatDateOrDateTime tz end
 
-formatEventAsText :: Appointment -> Text.Text
-formatEventAsText e = (e ^. ieSummary) <> " " <> formatTime (e ^. ieTime)
+formatEventAsText :: TZ -> Appointment -> Text.Text
+formatEventAsText tz e = (e ^. ieSummary) <> " " <> formatTime tz (e ^. ieTime)
 
-formatDiffAsText :: EventDifference -> Text.Text
-formatDiffAsText (DiffNew e)      = "Neuer Termin: " <> formatEventAsText e
-formatDiffAsText (DiffDeleted e)  = "Termin entfernt: " <> formatEventAsText e
-formatDiffAsText (DiffModified e) = "Termin anders: " <> formatEventAsText e
+formatDiffAsText :: TZ -> EventDifference -> Text.Text
+formatDiffAsText tz (DiffNew e)      = "Neuer Termin: " <> formatEventAsText tz e
+formatDiffAsText tz (DiffDeleted e)  = "Termin entfernt: " <> formatEventAsText tz e
+formatDiffAsText tz (DiffModified e) = "Termin anders: " <> formatEventAsText tz e
 
-formatDiffs :: [EventDifference] -> Maybe MatrixMessage
-formatDiffs [] = Nothing
-formatDiffs xs = Just (plainMessage (Text.intercalate "," (formatDiffAsText <$> xs)))
+formatDiffs :: TZ -> [EventDifference] -> Maybe MatrixMessage
+formatDiffs _ [] = Nothing
+formatDiffs tz xs = Just (plainMessage (Text.intercalate "," (formatDiffAsText tz <$> xs)))
 
-formatEvents :: [Appointment] -> Maybe MatrixMessage
-formatEvents [] = Nothing
-formatEvents xs = Just (plainMessage (Text.intercalate "," (formatEventAsText <$> xs)))
+-- formatEvents :: [Appointment] -> Maybe MatrixMessage
+-- formatEvents [] = Nothing
+-- formatEvents xs = Just (plainMessage (Text.intercalate "," (formatEventAsText tz <$> xs)))

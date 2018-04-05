@@ -57,7 +57,8 @@ eventHandler stateVar event = modifyMVar_ stateVar (eventHandler' stateVar event
 eventHandler' :: MVar ProgramState -> Event -> ProgramState -> IO ProgramState
 eventHandler' stateVar _ (ProgramState db dir wait) = do
   newDB <- eventDBFromFS dir
-  for_ (formatDiffs (db `compareDB` newDB)) sendMessage
+  tz <- loadTZFromDB "Europe/Berlin"
+  for_ (formatDiffs tz (db `compareDB` newDB)) sendMessage
   for_ wait (killThread . getWaitTid)
   newWait <- newWaitJob newDB stateVar
   pure (ProgramState newDB dir newWait)

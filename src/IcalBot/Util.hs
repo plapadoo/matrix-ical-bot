@@ -27,6 +27,12 @@ import           Text.Show            (show)
 -- |Handy helper type for denoting endomorphisms
 type Endo a = a -> a
 
+utcTimeAtTz :: TZ -> UTCTime -> LocalTime
+utcTimeAtTz tz t =
+  let tnative = fromThyme t
+      tzi = utcToLocalTimeTZ tz tnative
+  in toThyme tzi
+
 timeOfDayAtTz :: TZ -> UTCTime -> TimeOfDay
 timeOfDayAtTz tz t =
   let tnative = fromThyme t
