@@ -34,4 +34,4 @@ plainMessage t = MatrixMessage t Nothing
 
 -- |Convert the structure back to text, ready to be sent
 incomingMessageToText :: MatrixMessage -> Text.Text
-incomingMessageToText (MatrixMessage plain markup) = (foldMap id (LazyText.toStrict . renderText . body_ <$> markup)) <> plain
+incomingMessageToText (MatrixMessage plain markup) = foldMap id (LazyText.toStrict . renderText . body_ <$> markup) <> plain

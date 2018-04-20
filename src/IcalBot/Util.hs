@@ -37,7 +37,7 @@ timeOfDayAtTz :: TZ -> UTCTime -> TimeOfDay
 timeOfDayAtTz tz t =
   let tnative = fromThyme t
       tzi = utcToLocalTimeTZ tz tnative
-  in (toThyme tzi) ^. _localTimeOfDay
+  in toThyme tzi ^. _localTimeOfDay
 
 -- |List a directory, appending the original path to the resulting paths
 listDirectory :: FilePath -> IO [FilePath]

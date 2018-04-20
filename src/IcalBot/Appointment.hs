@@ -1,28 +1,30 @@
-{-# LANGUAGE Rank2Types      #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE Rank2Types #-}
 -- |Functions for the appointment data structure and its friends
 -- (mostly wrapping Icalendar types)
 module IcalBot.Appointment(
     Appointment(..)
-  , iePath
-  , ieUid
-  , ieTime
   , ieStartDay
+  , ieEndDay
   , fromIcal
   , ieTimeOfDayStart
   , ieTimeOfDayStartAtZone
+  , ieTimeOfDayEnd
+  , ieTimeOfDayEndAtZone
   , ieAllDay
+  , ieAllDayEnd
   , ieStart
+  , ieEnd
   , DateOrDateTime(..)
   , AppointedTime(..)
-  , ieSummary) where
+  ) where
 
 import           Control.Applicative  (pure)
-import           Control.Lens         (Getter, from, makeLenses, to, (^.))
+import           Control.Lens         (from, view, (^.))
 import           Data.Bool            (Bool (False, True))
 import           Data.Either          (Either (Left, Right))
 import           Data.Eq              (Eq)
 import           Data.Function        (($), (.))
+import           Data.Functor         ((<$>))
 import           Data.Maybe           (Maybe (Just, Nothing))
 import           Data.String          (String)
 import qualified Data.Text            as Text
@@ -87,13 +89,16 @@ data AppointedTime = OnlyStart DateOrDateTime
                   | Range DateOrDateTime DateOrDateTime
                   deriving(Show, Eq)
 
-ieStart :: Getter AppointedTime UTCTime
-ieStart = to appointedTimeStart'
-  where appointedTimeStart' :: AppointedTime -> UTCTime
-        appointedTimeStart' (OnlyStart (AllDay day)) = localTimeToUTCTime (LocalTime day midnight)
-        appointedTimeStart' (OnlyStart (AtPoint u)) = u
-        appointedTimeStart' (Range (AllDay day) _) = localTimeToUTCTime (LocalTime day midnight)
-        appointedTimeStart' (Range (AtPoint u) _) = u
+ieStart :: AppointedTime -> UTCTime
+ieStart (OnlyStart (AllDay day)) = localTimeToUTCTime (LocalTime day midnight)
+ieStart (OnlyStart (AtPoint u))  = u
+ieStart (Range (AllDay day) _)   = localTimeToUTCTime (LocalTime day midnight)
+ieStart (Range (AtPoint u) _)    = u
+
+ieEnd :: AppointedTime -> Maybe UTCTime
+ieEnd (Range _ (AllDay day)) = Just (localTimeToUTCTime (LocalTime day midnight))
+ieEnd (Range _ (AtPoint u)) = Just u
+ieEnd _ = Nothing
 
 -- |An event in the internal format (using "our" data types instead of
 -- the one icalendar provides; this makes lots of stuff easier, like
@@ -104,31 +109,43 @@ ieStart = to appointedTimeStart'
 data Appointment = Appointment {
   -- |Path of the file from where the event originated from (this
   -- assumes that stuff comes from files, only)
-    _iePath    :: FilePath
+    iePath    :: FilePath
   -- |Summary, taken directly from ical
-  , _ieSummary :: Text.Text
+  , ieSummary :: Text.Text
   -- |Boiled down time value in our internal format.
-  , _ieTime    :: AppointedTime
+  , ieTime    :: AppointedTime
   -- |UID without the "other" parameter from ical
-  , _ieUid     :: Text.Text
+  , ieUid     :: Text.Text
   } deriving(Show, Eq)
 
-makeLenses ''Appointment
-
-ieAllDay :: Getter Appointment Bool
-ieAllDay = ieTime . to isAllDay'
+ieAllDay :: Appointment -> Bool
+ieAllDay = isAllDay' . ieTime
   where isAllDay' (OnlyStart (AllDay _)) = True
         isAllDay' (Range (AllDay _) _)   = True
         isAllDay' _                      = False
 
-ieStartDay :: Getter Appointment Day
-ieStartDay = ieTime . ieStart .  _utctDay
+ieAllDayEnd :: Appointment -> Bool
+ieAllDayEnd = isAllDay' . ieTime
+  where isAllDay' (Range _ (AllDay _)) = True
+        isAllDay' _                    = False
 
-ieTimeOfDayStartAtZone :: TZ -> Getter Appointment TimeOfDay
-ieTimeOfDayStartAtZone tz = ieTime . ieStart . to (timeOfDayAtTz tz)
+ieStartDay :: Appointment -> Day
+ieStartDay = view _utctDay . ieStart . ieTime
 
-ieTimeOfDayStart :: Getter Appointment TimeOfDay
-ieTimeOfDayStart = ieTime . ieStart . _utctDayTime . timeOfDay
+ieEndDay :: Appointment -> Maybe Day
+ieEndDay = (view _utctDay <$>) . ieEnd . ieTime
+
+ieTimeOfDayStartAtZone :: TZ -> Appointment -> TimeOfDay
+ieTimeOfDayStartAtZone tz = timeOfDayAtTz tz . ieStart . ieTime
+
+ieTimeOfDayEndAtZone :: TZ -> Appointment -> Maybe TimeOfDay
+ieTimeOfDayEndAtZone tz = (timeOfDayAtTz tz <$>) . ieEnd . ieTime
+
+ieTimeOfDayStart :: Appointment -> TimeOfDay
+ieTimeOfDayStart = view timeOfDay . view _utctDayTime . ieStart . ieTime
+
+ieTimeOfDayEnd :: Appointment -> Maybe TimeOfDay
+ieTimeOfDayEnd = (view timeOfDay <$>) . (view _utctDayTime <$>) . ieEnd . ieTime
 
 -- |Convert a start and an optional end (or a duration) to the internal format
 timeFromIcal :: DTStart -> Maybe (Either DTEnd DurationProp) -> IO AppointedTime
@@ -158,9 +175,9 @@ fromIcal fn e = case veDTStart e of
     Nothing -> pure Nothing
     Just summary -> do
       t <- timeFromIcal start (veDTEndDuration e)
-      pure $ Just $ Appointment {
-        _iePath = fn
-        , _ieSummary = (LazyText.toStrict . summaryValue) summary
-        , _ieTime = t
-        , _ieUid = (LazyText.toStrict . uidValue . veUID) e
+      pure $ Just Appointment {
+          iePath = fn
+        , ieSummary = (LazyText.toStrict . summaryValue) summary
+        , ieTime = t
+        , ieUid = (LazyText.toStrict . uidValue . veUID) e
         }

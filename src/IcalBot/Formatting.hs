@@ -8,12 +8,12 @@ module IcalBot.Formatting(
   , formatEventAsText
   , formatDiffAsText
   , formatDiffs
+  , textShow
   ) where
 
 import           Control.Lens          ((^.))
 import           Data.Function         (($), (.))
 import           Data.Functor          ((<$>))
-import           Data.Int              (Int)
 import           Data.Maybe            (Maybe (Just, Nothing))
 import           Data.Monoid           ((<>))
 import           Data.Ord              ((<))
@@ -31,7 +31,7 @@ import           IcalBot.Appointment   (AppointedTime (OnlyStart, Range),
 import           IcalBot.EventDB       (EventDifference (..))
 import           IcalBot.MatrixMessage (MatrixMessage, plainMessage)
 import           IcalBot.Util          (utcTimeAtTz)
-import           Text.Show             (show)
+import           Text.Show             (Show, show)
 
 dayToText :: Day -> Text.Text
 dayToText day =
@@ -51,7 +51,7 @@ formatDateOrDateTime :: TZ -> DateOrDateTime -> Text.Text
 formatDateOrDateTime _ (AllDay day)      = dayToText day
 formatDateOrDateTime tz (AtPoint utcTime) = localTimeToText (utcTimeAtTz tz utcTime)
 
-textShow :: IsString a => Int -> a
+textShow :: (Show b, IsString a) => b -> a
 textShow = fromString . show
 
 timeOfDayToText :: TimeOfDay -> Text.Text
@@ -63,10 +63,10 @@ timeOfDayToText (TimeOfDay hour minute _) =
 
 formatTime :: TZ -> AppointedTime -> Text.Text
 formatTime tz (OnlyStart dateOrDt) = formatDateOrDateTime tz dateOrDt
-formatTime tz (Range start end)    = "Vom " <> formatDateOrDateTime tz start <> " bis " <> formatDateOrDateTime tz end
+formatTime tz (Range start end)    = "vom " <> formatDateOrDateTime tz start <> " bis " <> formatDateOrDateTime tz end
 
 formatEventAsText :: TZ -> Appointment -> Text.Text
-formatEventAsText tz e = (e ^. ieSummary) <> " " <> formatTime tz (e ^. ieTime)
+formatEventAsText tz e = ieSummary e <> " " <> formatTime tz (ieTime e)
 
 formatDiffAsText :: TZ -> EventDifference -> Text.Text
 formatDiffAsText tz (DiffNew e)      = "Neuer Termin: " <> formatEventAsText tz e

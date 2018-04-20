@@ -6,7 +6,7 @@ import           Control.Concurrent      (ThreadId, forkIO, killThread,
 import           Control.Concurrent.MVar (MVar, modifyMVar_, newEmptyMVar,
                                           putMVar)
 import           Control.Lens            ((^.))
-import           Control.Monad           (void)
+import           Control.Monad           (forever, void)
 import           Data.AffineSpace        ((.-.))
 import           Data.Bool               (Bool (..))
 import           Data.Foldable           (for_)
@@ -19,8 +19,8 @@ import           IcalBot.EventDB         (EventDB, compareDB, eventDBFromFS)
 import           IcalBot.Formatting      (formatDiffs)
 import           IcalBot.MatrixMessage   (MatrixMessage (..),
                                           incomingMessageToText)
-import           IcalBot.Scheduling      (nextAppointment)
-import           Prelude                 (fromIntegral)
+import           IcalBot.Scheduling      (nextAppointment, nextMessage)
+import           Prelude                 (fromIntegral, (*), (+))
 import           ProgramOptions          (poDirectory, readProgramOptions)
 import           System.FilePath
 import           System.FSNotify         (Event (..), watchTree, withManager)
@@ -38,13 +38,14 @@ newWaitJob :: EventDB -> MVar ProgramState -> IO (Maybe WaitJob)
 newWaitJob db stateVar = do
   ct <- getCurrentTime
   tz <- loadTZFromDB "Europe/Berlin"
-  case nextAppointment db tz ct of
+  case nextMessage db tz ct of
     Nothing -> pure Nothing
     Just (pointInFuture, message) -> do
       backThread <- forkIO $ do
         ct' <- getCurrentTime
         let diff = pointInFuture .-. ct'
-        threadDelay (fromIntegral (diff ^. microseconds))
+        -- Add some seconds, hopefully to wake up _after_ the appointment
+        threadDelay (fromIntegral ((diff ^. microseconds) + 1000 * 1000 * 10))
         modifyMVar_ stateVar $ \(ProgramState db' dir _) -> do
           newWait <- newWaitJob db' stateVar
           sendMessage message
@@ -80,3 +81,5 @@ main = do
       dir
       (const True)
       (eventHandler stateVar)
+
+    forever (threadDelay 100000)
