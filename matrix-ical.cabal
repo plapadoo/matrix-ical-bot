@@ -27,7 +27,11 @@ library
   exposed-modules:     IcalBot.Util
                      , IcalBot.MatrixMessage
                      , IcalBot.EventDB
-                     , IcalBot.Appointment
+                     , IcalBot.AppointedTime
+                     , IcalBot.Appt
+                     , IcalBot.SubAppt
+                     , IcalBot.ApptStatus
+                     , IcalBot.DateOrDateTime
                      , IcalBot.Scheduling
                      , IcalBot.Formatting
   build-depends: 

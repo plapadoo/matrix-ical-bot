@@ -1,6 +1,7 @@
 -- |Random utility functions
 module IcalBot.Util where
 
+import           Control.Applicative  (Applicative, pure)
 import           Control.Exception    (SomeException)
 import           Control.Lens         (from, view, (^.))
 import           Data.AdditiveGroup   (zeroV)
@@ -26,6 +27,14 @@ import           Text.Show            (show)
 
 -- |Handy helper type for denoting endomorphisms
 type Endo a = a -> a
+
+foldMaybe :: Applicative m => Maybe a -> (a -> m (Maybe b)) -> m (Maybe b)
+foldMaybe Nothing _  = pure Nothing
+foldMaybe (Just x) f = f x
+
+foldMaybe' :: Applicative m => Maybe a -> (a -> m b) -> m (Maybe b)
+foldMaybe' Nothing _  = pure Nothing
+foldMaybe' (Just x) f = Just <$> f x
 
 utcTimeAtTz :: TZ -> UTCTime -> LocalTime
 utcTimeAtTz tz t =
