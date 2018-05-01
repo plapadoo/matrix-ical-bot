@@ -1,14 +1,4 @@
 let
-  config = {
-    packageOverrides = pkgs: rec {
-      haskellPackages = pkgs.haskellPackages.override {
-        overrides = haskellPackagesNew: haskellPackagesOld: rec {
-          matrix-ical-bot = haskellPackagesNew.callCabal2nix "matrix-ical" ./. {};
-        };
-      };
-    };
-  };
-
   bootstrap = import <nixpkgs> { };
 
   nixpkgs = builtins.fromJSON (builtins.readFile ./nixpkgs.json);
@@ -19,40 +9,11 @@ let
     inherit (nixpkgs) rev sha256;
   };
 
-  pkgs = import src { inherit config; };
-
-  # We need this "mess" in order to get a minimal base image containing /etc/services, /etc/protocols
-  # and maybe even certificates. http(s) is hard.
-  # See https://github.com/NixOS/nixpkgs/issues/18038
-  minimalDocker = {
-    imports = [ "${src}/nixos/modules/profiles/minimal.nix" ];
-    boot.isContainer = true;
-  };
-
-  eval = import "${src}/nixos/lib/eval-config.nix" {
-    modules = [
-      minimalDocker
-    ];
-  };
-
-  system = eval.config.system;
-
+  pkgs = import src { };
+  thisPackage = pkgs.haskellPackages.callCabal2nix "matrix-ical" ./. {};
 in
   pkgs.dockerTools.buildImage {
-      name = "matrix-ical-bot";
-      tag = "latest";
-      contents = pkgs.symlinkJoin {
-        name = "matrix-ical-bot-contents";
-	paths = [
-	  (pkgs.haskell.lib.justStaticExecutables pkgs.haskellPackages.matrix-ical-bot)
-	  system.build.etc
-	  system.path
-	];
-      };
-      config = {
-        Cmd = [ "matrix-ical-exe" ];
-        Volumes = {
-          "/etc/matrix-bot" = {};
-        };
-      };
-    }
+    name = "matrix-ical-bot";
+    tag = "latest";
+    contents = pkgs.haskell.lib.justStaticExecutables thisPackage;
+  }

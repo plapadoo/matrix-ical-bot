@@ -20,7 +20,11 @@ The easiest way to compile the bot or the docker image from source is to use the
 
     nix-build
 
-The resulting files will be located in the `result/` directory.
+The resulting files will be located in the `result/` directory. To build the Docker image, use
+
+    nix-build dockerimage.nix
+
+This will, at the last line, output a path that you can feed into `docker load`.
 
 ### Using cabal
 
