@@ -109,7 +109,8 @@ eventDBFromFiles files = do
   eithers <- traverseCalFiles files
   let (lefts,rights) = partitionEithers eithers
   -- print all errors, then ignore
-  forM_ lefts (hPutStrLn stderr)
+  --forM_ lefts (hPutStrLn stderr)
+  forM_ lefts (pure ())
   pure (eventDBFromList (join rights))
 
 -- |Create an event data base from a single file
