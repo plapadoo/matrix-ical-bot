@@ -199,8 +199,8 @@ case_collectApptsOnlyStartAllDay = do
         }
       db = eventDBFromList [firstAppt]
       result = second messagePlainText <$> (collectAppts db utcTZ now)
-  result @?= [ (readTimeString "2017-10-31T20:00:00", "Termin morgen: foo (ganztägig)")
-             , (readTimeString "2017-11-01T08:00:00", "Termin heute: foo (ganztägig)")
+  result @?= [ (readTimeString "2017-10-31T20:00:00", "Termin morgen: foo (ganztaegig)")
+             , (readTimeString "2017-11-01T08:00:00", "Termin heute: foo (ganztaegig)")
              ]
 
 -- |Single appt, with a start and an end (point), in UTC.
