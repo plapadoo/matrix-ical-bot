@@ -105,7 +105,7 @@ formatApptShort tz a =
     case saStatus a of
       ApptStarts ->
         if appTimeStartAllDay (apptTime appt)
-        then apptSummary appt <> " (ganztägig)"
+        then apptSummary appt <> " (ganztaegig)"
         else timeOfDayToText (apptTimeOfDayStartAtZone tz appt) <> " " <> apptSummary appt
       ApptEnds ->
         if appTimeEndAllDay (apptTime appt)
