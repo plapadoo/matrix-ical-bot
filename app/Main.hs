@@ -42,8 +42,7 @@ sendMessage :: MatrixMessage -> IO ()
 sendMessage = TextIO.putStrLn . incomingMessageToText
 
 putErr :: Text.Text -> IO ()
---putErr = TextIO.hPutStrLn stderr
-putErr _ = pure ()
+putErr = TextIO.hPutStrLn stderr
 
 newWaitJob :: EventDB -> MVar ProgramState -> IO (Maybe WaitJob)
 newWaitJob db stateVar = do
