@@ -43,7 +43,7 @@ sendMessage = TextIO.putStrLn . incomingMessageToText
 
 putErr :: Text.Text -> IO ()
 -- putErr = TextIO.hPutStrLn stderr
-putErr = pure ()
+putErr _ = pure ()
 
 newWaitJob :: EventDB -> MVar ProgramState -> IO (Maybe WaitJob)
 newWaitJob db stateVar = do
