@@ -4,6 +4,7 @@ module ProgramOptions
   ( ProgramOptions(..)
   , readProgramOptions
   , poDirectory
+  , poLogFile
   ) where
 
 import           Control.Applicative    ((<$>), (<*>))
@@ -14,7 +15,8 @@ import qualified Options.Applicative    as OptAppl
 import           System.FilePath        (FilePath)
 
 data ProgramOptions = ProgramOptions
-  { _poDirectory  :: FilePath
+  { _poDirectory :: FilePath
+  , _poLogFile   :: FilePath
   }
 
 makeLenses ''ProgramOptions
@@ -24,7 +26,10 @@ programOptionsParser =
   ProgramOptions <$>
     OptAppl.strOption
         (OptAppl.long "directory" <>
-         OptAppl.help "The directory to watch")
+         OptAppl.help "The directory to watch") <*>
+    OptAppl.strOption
+        (OptAppl.long "log-file" <>
+         OptAppl.help "The file to log into")
 
 readProgramOptions
   :: MonadIO m

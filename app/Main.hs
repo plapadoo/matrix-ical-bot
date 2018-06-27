@@ -28,7 +28,8 @@ import           IcalBot.MatrixMessage   (MatrixMessage (..),
 import           IcalBot.Scheduling      (collectAppts, nextMessage)
 import           IcalBot.Util            (foldMaybe')
 import           Prelude                 (fromIntegral, (*), (+))
-import           ProgramOptions          (poDirectory, readProgramOptions)
+import           ProgramOptions          (ProgramOptions, poDirectory,
+                                          poLogFile, readProgramOptions)
 import           System.FilePath
 import           System.FSNotify         (Event (..), watchTree, withManager)
 import           System.IO               (BufferMode (NoBuffering), IO,
@@ -36,44 +37,45 @@ import           System.IO               (BufferMode (NoBuffering), IO,
 
 newtype WaitJob = WaitJob { getWaitTid :: ThreadId }
 
-data ProgramState = ProgramState EventDB FilePath (Maybe WaitJob)
+data ProgramState = ProgramState ProgramOptions EventDB FilePath (Maybe WaitJob)
 
 sendMessage :: MatrixMessage -> IO ()
 sendMessage = TextIO.putStrLn . incomingMessageToText
 
-putErr :: Text.Text -> IO ()
--- putErr = TextIO.hPutStrLn stderr
-putErr _ = pure ()
+putErr :: ProgramOptions -> Text.Text -> IO ()
+putErr po = TextIO.appendFile (po ^. poLogFile)
 
-newWaitJob :: EventDB -> MVar ProgramState -> IO (Maybe WaitJob)
-newWaitJob db stateVar = do
+newWaitJob :: ProgramOptions -> EventDB -> MVar ProgramState -> IO (Maybe WaitJob)
+newWaitJob po db stateVar = do
   ct <- getCurrentTime
   tz <- loadTZFromDB "Europe/Berlin"
   foldMaybe' (nextMessage db tz ct) $ \(pointInFuture, message) -> do
-    putErr ("Next message: " <> textShow pointInFuture <> ": " <> textShow message)
-    putErr ("Appts: " <> textShow (sortBy (compare `on` fst) (collectAppts db tz ct)))
+    putErr po ("Next message: " <> textShow pointInFuture <> ": " <> textShow message)
+    putErr po ("Appts: " <> textShow (sortBy (compare `on` fst) (collectAppts db tz ct)))
     backThread <- forkIO $ do
       ct' <- getCurrentTime
       let diff = pointInFuture .-. ct'
-      -- Add some seconds, hopefully to wake up _after_ the appointment
-      threadDelay (fromIntegral ((diff ^. microseconds) + 1000 * 1000 * 10))
-      modifyMVar_ stateVar $ \(ProgramState db' dir _) -> do
-        newWait <- newWaitJob db' stateVar
+          -- Add some seconds, hopefully to wake up _after_ the appointment
+          waitTime = fromIntegral ((diff ^. microseconds) + 1000 * 1000 * 10)
+      putErr po ("Waiting " <> textShow waitTime)
+      threadDelay waitTime
+      modifyMVar_ stateVar $ \(ProgramState po db' dir _) -> do
+        newWait <- newWaitJob po db' stateVar
         sendMessage message
-        pure (ProgramState db' dir newWait)
+        pure (ProgramState po db' dir newWait)
     pure (WaitJob backThread)
 
 eventHandler :: MVar ProgramState -> Event -> IO ()
 eventHandler stateVar event = modifyMVar_ stateVar (eventHandler' stateVar event)
 
 eventHandler' :: MVar ProgramState -> Event -> ProgramState -> IO ProgramState
-eventHandler' stateVar _ (ProgramState db dir wait) = do
+eventHandler' stateVar _ (ProgramState po db dir wait) = do
   newDB <- eventDBFromFS dir
   tz <- loadTZFromDB "Europe/Berlin"
   for_ (formatDiffs tz (db `compareDB` newDB)) sendMessage
   for_ wait (killThread . getWaitTid)
-  newWait <- newWaitJob newDB stateVar
-  pure (ProgramState newDB dir newWait)
+  newWait <- newWaitJob po newDB stateVar
+  pure (ProgramState po newDB dir newWait)
 
 main :: IO ()
 main = do
@@ -82,11 +84,11 @@ main = do
   let dir = po ^. poDirectory
   db <- eventDBFromFS dir
   stateVar <- newEmptyMVar
-  waitJob <- newWaitJob db stateVar
-  putMVar stateVar (ProgramState db dir waitJob)
+  waitJob <- newWaitJob po db stateVar
+  putMVar stateVar (ProgramState po db dir waitJob)
   withManager $ \mgr -> do
     -- start a watching job (in the background)
-    putErr "starting fs watch..."
+    putErr po "starting fs watch..."
     void $ watchTree
       mgr
       dir

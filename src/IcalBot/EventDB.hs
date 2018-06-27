@@ -22,7 +22,7 @@ import           Data.Bool              (Bool (False), not, (||))
 import           Data.Default           (def)
 import           Data.Either            (Either (Left, Right), partitionEithers)
 import           Data.Eq                (Eq, (/=))
-import           Data.Foldable          (foldMap, foldr, forM_, toList)
+import           Data.Foldable          (foldMap, foldr, toList)
 import           Data.Function          (flip, ($), (.))
 import           Data.Functor           ((<$>))
 import           Data.List              (any, concatMap, filter, isInfixOf)
@@ -43,7 +43,7 @@ import           IcalBot.DateOrDateTime (dayForDateTime)
 import           IcalBot.SubAppt        (SubAppt (saTime), appointmentDates)
 import           IcalBot.Util           (Endo, listDirectory, showException)
 import           System.FilePath        (FilePath)
-import           System.IO              (IO, hPutStrLn, stderr)
+import           System.IO              (IO)
 import           Text.ICalendar.Parser  (parseICalendarFile)
 import           Text.ICalendar.Types   (VCalendar (vcEvents), VEvent)
 import           Text.Show              (Show)
@@ -107,7 +107,7 @@ eventDBFromList = EventDB . foldr (\e -> Map.insert (apptUid e) e) mempty
 eventDBFromFiles :: [FilePath] -> IO EventDB
 eventDBFromFiles files = do
   eithers <- traverseCalFiles files
-  let (lefts,rights) = partitionEithers eithers
+  let (_,rights) = partitionEithers eithers
   -- print all errors, then ignore
   --forM_ lefts (hPutStrLn stderr)
   pure (eventDBFromList (join rights))
