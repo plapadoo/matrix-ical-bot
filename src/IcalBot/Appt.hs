@@ -11,38 +11,46 @@ module IcalBot.Appt(
   , apptTimeOfDayEndAtZone
   ) where
 
-import           Control.Applicative    (pure)
-import           Control.Lens           (view)
-import           Data.Either            (Either (Left, Right))
-import           Data.Eq                (Eq)
-import           Data.Function          (($), (.))
-import           Data.Functor           ((<$>))
-import           Data.Maybe             (Maybe (Just, Nothing))
-import qualified Data.Text              as Text
-import qualified Data.Text.Lazy         as LazyText
-import           Data.Thyme.Calendar    (Day)
-import           Data.Thyme.Clock       (TimeDiff, fromSeconds, _utctDayTime)
-import           Data.Thyme.LocalTime   (TimeOfDay, timeOfDay)
-import           Data.Thyme.Time.Core   (toThyme)
-import           Data.Time.Zones        (TZ)
-import           IcalBot.AppointedTime  (AppointedTime (OnlyStart, Range),
-                                         appTimeEnd, appTimeEndUtc,
-                                         appTimeStart, appTimeStartUtc)
-import           IcalBot.DateOrDateTime (DateOrDateTime (AllDay), addDuration,
-                                         dateTimeFromIcal, dayForDateTime)
-import           IcalBot.Util           (timeOfDayAtTz)
-import           Prelude                (Num, (*), (+))
-import           System.FilePath        (FilePath)
-import           System.IO              (IO)
-import           Text.ICalendar.Types   (DTEnd (DTEndDate, DTEndDateTime),
-                                         DTStart (DTStartDate, DTStartDateTime),
-                                         Date (..),
-                                         Duration (DurationDate, DurationTime, DurationWeek),
-                                         DurationProp (..),
-                                         Sign (Negative, Positive),
-                                         Summary (summaryValue), UID (uidValue),
-                                         VEvent (veDTEndDuration, veDTStart, veSummary, veUID))
-import           Text.Show              (Show)
+import           Control.Applicative                          (pure)
+import           Control.Lens                                 (view)
+import           Data.Either                                  (Either (Left, Right))
+import           Data.Eq                                      (Eq)
+import           Data.Function                                (($), (.))
+import           Data.Functor                                 ((<$>))
+import           Data.Maybe                                   (Maybe (Just, Nothing))
+import qualified Data.Text                                    as Text
+import qualified Data.Text.Lazy                               as LazyText
+import           Data.Thyme.Calendar                          (Day)
+import           Data.Thyme.Clock                             (TimeDiff,
+                                                               fromSeconds,
+                                                               _utctDayTime)
+import           Data.Thyme.LocalTime                         (TimeOfDay,
+                                                               timeOfDay)
+import           Data.Thyme.Time.Core                         (toThyme)
+import           Data.Time.Zones                              (TZ)
+import           IcalBot.AppointedTime                        (AppointedTime (OnlyStart, Range),
+                                                               appTimeEnd,
+                                                               appTimeEndUtc,
+                                                               appTimeStart,
+                                                               appTimeStartUtc)
+import           IcalBot.DateOrDateTime                       (DateOrDateTime (AllDay),
+                                                               addDuration,
+                                                               dateTimeFromIcal,
+                                                               dayForDateTime)
+import           IcalBot.Util                                 (timeOfDayAtTz)
+import           Prelude                                      (Num, (*), (+))
+import           System.FilePath                              (FilePath)
+import           System.IO                                    (IO)
+import           Text.ICalendar.Types.Components              (VEvent (veDTEndDuration, veDTStart, veSummary, veUID))
+import           Text.ICalendar.Types.Properties.DateTime     (DTEnd (dtEndValue),
+                                                               DTStart (dtStartValue),
+                                                               DurationProp (..),
+                                                               VDateTime (VDate, VDateTime))
+import           Text.ICalendar.Types.Properties.Descriptive  (Summary (summaryValue))
+import           Text.ICalendar.Types.Properties.Relationship (UID (uidValue))
+import           Text.ICalendar.Types.Values                  (Date (..), Duration (DurationDate, DurationTime, DurationWeek),
+                                                               Sign (Negative, Positive))
+import           Text.Show                                    (Show)
 
 
 -- |An event in the internal format (using "our" data types instead of
@@ -95,16 +103,17 @@ durationToDiffTime (DurationWeek sign week)                   = fromSeconds (sig
 timeFromIcal :: DTStart -> Maybe (Either DTEnd DurationProp) -> IO AppointedTime
 timeFromIcal start end = do
   start' <-
-    case start of
-      DTStartDate (Date d) _ -> pure (AllDay (toThyme d))
-      DTStartDateTime dt _   -> dateTimeFromIcal dt
+    case dtStartValue start of
+      VDate (Date d) -> pure (AllDay (toThyme d))
+      VDateTime dt   -> dateTimeFromIcal dt
   case end of
     Nothing ->
       pure (OnlyStart start')
     Just end' ->
       case end' of
-        Left (DTEndDate (Date d) _) -> pure (Range start' (AllDay (toThyme d)))
-        Left (DTEndDateTime d _)    -> Range start' <$> dateTimeFromIcal d
+        Left x -> case dtEndValue x of
+            VDate (Date d) -> pure (Range start' (AllDay (toThyme d)))
+            VDateTime d    -> Range start' <$> dateTimeFromIcal d
         Right (DurationProp d _)    -> pure (Range start' (addDuration start' (durationToDiffTime d)))
 
 

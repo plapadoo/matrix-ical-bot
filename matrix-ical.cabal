@@ -72,20 +72,3 @@ executable matrix-ical-bot
     , text-format
   default-language: Haskell2010
   other-modules: ProgramOptions
-
-test-suite test-hunit
-  type:                exitcode-stdio-1.0
-  default-language:    Haskell2010
-  default-extensions:  OverloadedStrings NoImplicitPrelude
-  hs-source-dirs:      test
-  Main-is:             Tests.hs
-  Build-Depends:       base
-                     , test-framework-th
-                     , test-framework-hunit
-                     , HUnit
-                     , text
-                     , vector-space
-                     , thyme
-                     , tz
-                     , old-locale
-                     , matrix-ical
