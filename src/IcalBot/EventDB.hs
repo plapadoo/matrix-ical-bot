@@ -4,8 +4,8 @@ module IcalBot.EventDB(
   , EventID
   , EventIDSet
   , filterDB
-  , filterDBAfter
   , daysGrouped
+  , resolveRepetitions
   , collect
   , collectFlat
   , eventDBFromFS
@@ -14,11 +14,10 @@ module IcalBot.EventDB(
   , eventDBFromFile
   , EventDifference(..)) where
 
-
 import           Control.Applicative    (pure)
 import           Control.Exception      (catch)
 import           Control.Monad          (join)
-import           Data.Bool              (Bool (False), not, (||))
+import           Data.Bool              (Bool, not)
 import           Data.Default           (def)
 import           Data.Either            (Either (Left, Right), partitionEithers)
 import           Data.Eq                (Eq, (/=))
@@ -27,20 +26,23 @@ import           Data.Function          (flip, ($), (.))
 import           Data.Functor           ((<$>))
 import           Data.List              (any, concatMap, filter, isInfixOf)
 import qualified Data.Map.Strict        as Map
-import           Data.Maybe             (Maybe, catMaybes, fromJust, maybe)
+import           Data.Maybe             (Maybe (Just, Nothing), catMaybes,
+                                         fromJust)
 import           Data.Monoid            (Monoid, mappend, mempty, (<>))
-import           Data.Ord               ((>=))
 import qualified Data.Set               as Set
 import           Data.String            (String)
 import qualified Data.Text              as Text
 import           Data.Thyme.Calendar    (Day)
 import           Data.Thyme.Clock       (UTCTime)
-import           Data.Traversable       (for, traverse)
+import           Data.Traversable       (for, mapM, traverse)
 import           Data.Tuple             (fst)
-import           IcalBot.AppointedTime  (appTimeEndUtc, appTimeStartUtc)
-import           IcalBot.Appt           (Appt, apptTime, apptUid, fromIcal)
+import           IcalBot.AppointedTime  (AppointedTime)
+import           IcalBot.Appt           (Appt, apptPath, apptTime, apptUid,
+                                         firstRep, fromIcal, fromIcalNoRepeats)
 import           IcalBot.DateOrDateTime (dayForDateTime)
+import           IcalBot.RepeatInfo     (riEvents)
 import           IcalBot.SubAppt        (SubAppt (saTime), appointmentDates)
+import           IcalBot.TimeOrRepeat   (TimeOrRepeat (Repeat, Time))
 import           IcalBot.Util           (Endo, listDirectory, showException)
 import           System.FilePath        (FilePath)
 import           System.IO              (IO)
@@ -56,7 +58,7 @@ type EventIDSet = Set.Set EventID
 
 -- |A collection of Appts (or events, which is shorter), with
 -- the UID as primary key
-newtype EventDB = EventDB (Map.Map EventID Appt)
+newtype EventDB = EventDB (Map.Map EventID (Appt TimeOrRepeat))
                 deriving(Eq, Show)
 
 instance Monoid EventDB where
@@ -66,14 +68,27 @@ instance Monoid EventDB where
 veventsInCals :: [VCalendar] -> [VEvent]
 veventsInCals = concatMap (toList . vcEvents)
 
+resolveRepetitions :: EventDB -> UTCTime -> IO [Appt AppointedTime]
+resolveRepetitions db after =
+  let single :: Appt TimeOrRepeat -> IO (Maybe (Appt AppointedTime))
+      single a =
+        case apptTime a of
+          Time t -> pure (Just (a { apptTime = t }))
+          Repeat ri -> do
+            f <- firstRep after (riEvents ri)
+            case f of
+              Nothing -> pure Nothing
+              Just f' -> fromIcalNoRepeats (apptPath a) f'
+  in catMaybes <$> mapM single (events db)
+
 parseICalendarFileSafe :: FilePath -> IO (Either String [VCalendar])
 parseICalendarFileSafe fn = (fst <$>) <$> parseICalendarFile def fn `catch` (pure . Left . showException)
 
 -- |Contrary to the name, this isn't a difference of an event, but of
 -- two event collections, which resulted in a single event difference.
-data EventDifference = DiffNew Appt
-                     | DiffDeleted Appt
-                     | DiffModified Appt
+data EventDifference = DiffNew (Appt TimeOrRepeat)
+                     | DiffDeleted (Appt TimeOrRepeat)
+                     | DiffModified (Appt TimeOrRepeat)
                      deriving(Show, Eq)
 
 flipLook :: Map.Map EventID a -> EventID -> Maybe a
@@ -90,7 +105,7 @@ compareDB (EventDB old) (EventDB new) =
       afterMod = DiffModified . fromJust . flipLook new <$> toList modified
   in inserted <> deleted <> afterMod
 
-traverseCalFiles :: [FilePath] -> IO [Either String [Appt]]
+traverseCalFiles :: [FilePath] -> IO [Either String [Appt TimeOrRepeat]]
 traverseCalFiles files = for files $ \fn -> do
   parsed <- parseICalendarFileSafe fn
   case parsed of
@@ -101,7 +116,7 @@ validEventPath :: FilePath -> Bool
 validEventPath e = not (any (`isInfixOf` e) [".Radicale.cache",".Radicale.tmp",".Radicale.props"])
 
 -- |Create an event data base from a plain list
-eventDBFromList :: [Appt] -> EventDB
+eventDBFromList :: [Appt TimeOrRepeat] -> EventDB
 eventDBFromList = EventDB . foldr (\e -> Map.insert (apptUid e) e) mempty
 
 eventDBFromFiles :: [FilePath] -> IO EventDB
@@ -122,28 +137,25 @@ eventDBFromFS icalDir = do
   files <- filter validEventPath <$> listDirectory icalDir
   eventDBFromFiles files
 
-filterDB :: EventDB -> (Appt -> Bool) -> EventDB
+filterDB :: EventDB -> (Appt TimeOrRepeat -> Bool) -> EventDB
 filterDB (EventDB db) f = EventDB (Map.filter f db)
 
--- |Filter those events which are either starting in the future or are ongoing
-filterDBAfter :: EventDB -> UTCTime -> EventDB
-filterDBAfter db now = filterDB db f
-  where f :: Appt -> Bool
-        f a = appTimeStartUtc (apptTime a) >= now || maybe False (>= now) (appTimeEndUtc (apptTime a))
-
 -- |Group appointments by day (start and end date)
-daysGrouped :: EventDB -> Map.Map Day [SubAppt]
-daysGrouped (EventDB db) =
+daysGrouped :: [Appt AppointedTime] -> Map.Map Day [SubAppt]
+daysGrouped appts =
   let -- |Put one selected appointment into the corresponding map (create an Endo)
       accumSA :: SubAppt -> Endo (Map.Map Day [SubAppt])
       accumSA appt = Map.insertWith mappend (dayForDateTime (saTime appt)) [appt]
       -- |Fold all the Endos together
-      accum :: Appt -> Endo (Map.Map Day [SubAppt])
+      accum :: Appt AppointedTime -> Endo (Map.Map Day [SubAppt])
       accum a = foldMap accumSA (appointmentDates a)
-  in foldr accum mempty (Map.elems db)
+  in foldr accum mempty appts
 
-collect :: EventDB -> (Appt -> a) -> [a]
+collect :: EventDB -> (Appt TimeOrRepeat -> a) -> [a]
 collect (EventDB db) f = f <$> Map.elems db
 
-collectFlat :: EventDB -> (Appt -> [a]) -> [a]
+collectFlat :: EventDB -> (Appt TimeOrRepeat -> [a]) -> [a]
 collectFlat (EventDB db) f = concatMap f (Map.elems db)
+
+events :: EventDB -> [Appt TimeOrRepeat]
+events (EventDB db) = Map.elems db

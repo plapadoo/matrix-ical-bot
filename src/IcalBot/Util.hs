@@ -4,9 +4,10 @@ module IcalBot.Util where
 import           Control.Applicative  (Applicative, pure)
 import           Control.Exception    (SomeException)
 import           Control.Lens         (from, view, (^.))
+import           Control.Monad        (Monad, join)
 import           Data.AdditiveGroup   (zeroV)
 import           Data.Eq              ((==))
-import           Data.Foldable        (minimumBy)
+import           Data.Foldable        (Foldable, minimumBy)
 import           Data.Function        ((.))
 import           Data.Functor         ((<$>))
 import           Data.List            (filter, minimum)
@@ -19,6 +20,7 @@ import           Data.Thyme.LocalTime (Hour, LocalTime (..), TimeOfDay (..),
                                        utc, utcLocalTime, _localTimeOfDay)
 import           Data.Thyme.Time.Core (fromThyme, toThyme)
 import           Data.Time.Zones      (TZ, utcToLocalTimeTZ)
+import           Data.Traversable     (Traversable, mapM)
 import           Prelude              ()
 import qualified System.Directory     as Directory
 import           System.FilePath      (FilePath, (</>))
@@ -86,3 +88,6 @@ minimumElementsBy f xs =
 minimumSafe :: Ord a => [a] -> Maybe a
 minimumSafe [] = Nothing
 minimumSafe xs = Just (minimum xs)
+
+concatMapM        :: (Traversable t, Foldable t, Monad m, Monad t) => (a -> m (t b)) -> t a -> m (t b)
+concatMapM f xs   =  join <$> mapM f xs

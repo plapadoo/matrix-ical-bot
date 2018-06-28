@@ -22,6 +22,7 @@ import           IcalBot.Formatting             (dayToText,
                                                  timeOfDayToText)
 import           IcalBot.MatrixMessage          (messagePlainText, plainMessage)
 import           IcalBot.Scheduling             (collectAppts)
+import           IcalBot.TimeOrRepeat           (TimeOrRepeat (Repeat, Time))
 import           System.IO                      (IO)
 import           System.Locale                  (defaultTimeLocale)
 import           Test.Framework.Providers.HUnit (testCase)
@@ -46,10 +47,10 @@ case_eventWithRange = do
   let testAppt = Appt {
           apptPath = fn
         , apptSummary = "testevent"
-        , apptTime = Range (AtPoint start) (AtPoint end)
+        , apptTime = Time (Range (AtPoint start) (AtPoint end))
         , apptUid = "06c41895-6d2c-44c2-ae29-50fa85692765"
         }
-  appt @?= (eventDBFromList [testAppt])
+  appt @?= eventDBFromList [testAppt]
 
 -- |Try to read a pre-created file and see if the data matches
 case_eventWithDate = do
@@ -58,22 +59,22 @@ case_eventWithDate = do
   let testAppt = Appt {
           apptPath = fn
         , apptSummary = "dateevent"
-        , apptTime = Range (AllDay (readDayString "2019-05-31")) (AllDay (readDayString "2019-06-03"))
+        , apptTime = Time (Range (AllDay (readDayString "2019-05-31")) (AllDay (readDayString "2019-06-03")))
         , apptUid = "f8a596b2-2c5c-4628-831a-1d505da9ae18"
         }
-  appt @?= (eventDBFromList [testAppt])
+  appt @?= eventDBFromList [testAppt]
 
 -- |Just an appt with a specific UID
-dummyAppt :: Text.Text -> Appt
+dummyAppt :: Text.Text -> Appt TimeOrRepeat
 dummyAppt uid = dummyApptSummary uid uid
 
 -- |Just an appt with a specific UID and a summary
-dummyApptSummary :: Text.Text -> Text.Text -> Appt
+dummyApptSummary :: Text.Text -> Text.Text -> Appt TimeOrRepeat
 dummyApptSummary uid summary =
   Appt {
     apptPath = "/some/path.ical"
   , apptSummary = summary
-  , apptTime = Range (AllDay (readDayString "2019-05-31")) (AllDay (readDayString "2019-06-03"))
+  , apptTime = Time (Range (AllDay (readDayString "2019-05-31")) (AllDay (readDayString "2019-06-03")))
   , apptUid = uid
   }
 
@@ -139,11 +140,12 @@ case_collectApptsOnlyStartAtPoint = do
       firstAppt = Appt {
           apptPath = "/some/path.ical"
         , apptSummary = "foo"
-        , apptTime = OnlyStart (AtPoint start)
+        , apptTime = Time (OnlyStart (AtPoint start))
         , apptUid = "uid"
         }
       db = eventDBFromList [firstAppt]
-      result = second messagePlainText <$> (collectAppts db utcTZ now)
+  appts <- collectAppts db utcTZ now
+  let result = second messagePlainText <$> appts
   result @?= [ (readTimeString "2017-11-01T10:00:00", "Beginnt jetzt: foo")
              , (readTimeString "2017-10-31T20:00:00", "Termin morgen: 10:00 Uhr foo")
              , (readTimeString "2017-11-01T08:00:00", "Termin heute: 10:00 Uhr foo")
@@ -157,11 +159,12 @@ case_collectApptsOnlyStartAtPointEurope = do
       firstAppt = Appt {
           apptPath = "/some/path.ical"
         , apptSummary = "foo"
-        , apptTime = OnlyStart (AtPoint start)
+        , apptTime = Time (OnlyStart (AtPoint start))
         , apptUid = "uid"
         }
       db = eventDBFromList [firstAppt]
-      result = second messagePlainText <$> (collectAppts db tz now)
+  appts <- collectAppts db tz now
+  let result = second messagePlainText <$> appts
   result @?= [ (readTimeString "2017-11-01T10:00:00", "Beginnt jetzt: foo")
              , (readTimeString "2017-10-31T20:00:00", "Termin morgen: 11:00 Uhr foo")
              , (readTimeString "2017-11-01T08:00:00", "Termin heute: 11:00 Uhr foo")
@@ -176,11 +179,12 @@ case_collectApptsStartAndEndOnSameDay = do
       firstAppt = Appt {
           apptPath = "/some/path.ical"
         , apptSummary = "foo"
-        , apptTime = Range (AtPoint start) (AtPoint end)
+        , apptTime = Time (Range (AtPoint start) (AtPoint end))
         , apptUid = "uid"
         }
       db = eventDBFromList [firstAppt]
-      result = second messagePlainText <$> (collectAppts db tz now)
+  appts <- collectAppts db tz now
+  let result = second messagePlainText <$> appts
   result @?= [ (readTimeString "2017-11-01T10:00:00", "Beginnt jetzt: foo")
              , (readTimeString "2017-11-01T15:00:00", "Endet jetzt: foo")
              , (readTimeString "2017-10-31T20:00:00", "Termin morgen: 11:00 Uhr foo")
@@ -194,11 +198,12 @@ case_collectApptsOnlyStartAllDay = do
       firstAppt = Appt {
           apptPath = "/some/path.ical"
         , apptSummary = "foo"
-        , apptTime = OnlyStart (AllDay start)
+        , apptTime = Time (OnlyStart (AllDay start))
         , apptUid = "uid"
         }
       db = eventDBFromList [firstAppt]
-      result = second messagePlainText <$> (collectAppts db utcTZ now)
+  appts <- collectAppts db utcTZ now
+  let result = second messagePlainText <$> appts
   result @?= [ (readTimeString "2017-10-31T20:00:00", "Termin morgen: foo (ganztaegig)")
              , (readTimeString "2017-11-01T08:00:00", "Termin heute: foo (ganztaegig)")
              ]
@@ -211,11 +216,12 @@ case_collectApptsRange = do
       firstAppt = Appt {
           apptPath = "/some/path.ical"
         , apptSummary = "foo"
-        , apptTime = Range (AtPoint start) (AtPoint end)
+        , apptTime = Time (Range (AtPoint start) (AtPoint end))
         , apptUid = "uid"
         }
       db = eventDBFromList [firstAppt]
-      result = second messagePlainText <$> (collectAppts db utcTZ now)
+  appts <- collectAppts db utcTZ now
+  let result = second messagePlainText <$> appts
   result @?= [ (readTimeString "2017-11-01T10:00:00", "Beginnt jetzt: foo")
              , (readTimeString "2017-11-02T11:00:00", "Endet jetzt: foo")
              , (readTimeString "2017-10-31T20:00:00", "Termin morgen: 10:00 Uhr foo")
@@ -232,11 +238,12 @@ case_collectApptsOnCurrentDay = do
       firstAppt = Appt {
           apptPath = "/some/path.ical"
         , apptSummary = "foo"
-        , apptTime = Range (AtPoint start) (AtPoint end)
+        , apptTime = Time (Range (AtPoint start) (AtPoint end))
         , apptUid = "uid"
         }
       db = eventDBFromList [firstAppt]
-      result = second messagePlainText <$> (collectAppts db utcTZ now)
+  appts <- collectAppts db utcTZ now
+  let result = second messagePlainText <$> appts
   result @?= [ (readTimeString "2017-11-02T10:00:00", "Beginnt jetzt: foo")
              , (readTimeString "2017-11-03T11:00:00", "Endet jetzt: foo")
              , (readTimeString "2017-11-02T08:00:00", "Termin heute: 10:00 Uhr foo")
@@ -252,11 +259,12 @@ case_collectApptsEndingOnCurrentDay = do
       firstAppt = Appt {
           apptPath = "/some/path.ical"
         , apptSummary = "foo"
-        , apptTime = Range (AtPoint start) (AtPoint end)
+        , apptTime = Time (Range (AtPoint start) (AtPoint end))
         , apptUid = "uid"
         }
       db = eventDBFromList [firstAppt]
-      result = second messagePlainText <$> (collectAppts db utcTZ now)
+  appts <- collectAppts db utcTZ now
+  let result = second messagePlainText <$> appts
   result @?= [ (readTimeString "2017-11-03T11:00:00", "Endet jetzt: foo")
              , (readTimeString "2017-11-02T20:00:00", "Termin morgen: 11:00 Uhr foo endet")
              , (readTimeString "2017-11-03T08:00:00", "Termin heute: 11:00 Uhr foo endet")
@@ -270,11 +278,12 @@ case_collectApptsEndingTomorrow = do
       firstAppt = Appt {
           apptPath = "/some/path.ical"
         , apptSummary = "foo"
-        , apptTime = Range (AtPoint start) (AtPoint end)
+        , apptTime = Time (Range (AtPoint start) (AtPoint end))
         , apptUid = "uid"
         }
       db = eventDBFromList [firstAppt]
-      result = second messagePlainText <$> (collectAppts db utcTZ now)
+  appts <- collectAppts db utcTZ now
+  let result = second messagePlainText <$> appts
   result @?= [ (readTimeString "2017-11-05T11:00:00", "Endet jetzt: foo")
              , (readTimeString "2017-11-04T20:00:00", "Termin morgen: 11:00 Uhr foo endet")
              , (readTimeString "2017-11-05T08:00:00", "Termin heute: 11:00 Uhr foo endet")
@@ -288,11 +297,12 @@ case_collectApptsEndingTomorrowAllDay = do
       firstAppt = Appt {
           apptPath = "/some/path.ical"
         , apptSummary = "foo"
-        , apptTime = Range (AtPoint start) (AllDay end)
+        , apptTime = Time (Range (AtPoint start) (AllDay end))
         , apptUid = "uid"
         }
       db = eventDBFromList [firstAppt]
-      result = second messagePlainText <$> (collectAppts db utcTZ now)
+  appts <- collectAppts db utcTZ now
+  let result = second messagePlainText <$> appts
   result @?= [ (readTimeString "2017-11-03T20:00:00", "Termin morgen: foo endet")
              , (readTimeString "2017-11-04T08:00:00", "Termin heute: foo endet")
              ]

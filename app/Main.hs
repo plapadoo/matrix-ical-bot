@@ -26,14 +26,13 @@ import           IcalBot.Formatting      (formatDiffs, textShow)
 import           IcalBot.MatrixMessage   (MatrixMessage (..),
                                           incomingMessageToText)
 import           IcalBot.Scheduling      (collectAppts, nextMessage)
-import           IcalBot.Util            (foldMaybe')
 import           Prelude                 (fromIntegral, (*), (+))
 import           ProgramOptions          (ProgramOptions, poDirectory,
                                           poLogFile, readProgramOptions)
 import           System.FilePath
 import           System.FSNotify         (Event (..), watchTree, withManager)
 import           System.IO               (BufferMode (NoBuffering), IO,
-                                          hSetBuffering, stderr, stdout)
+                                          hSetBuffering, stdout)
 
 newtype WaitJob = WaitJob { getWaitTid :: ThreadId }
 
@@ -49,21 +48,25 @@ newWaitJob :: ProgramOptions -> EventDB -> MVar ProgramState -> IO (Maybe WaitJo
 newWaitJob po db stateVar = do
   ct <- getCurrentTime
   tz <- loadTZFromDB "Europe/Berlin"
-  foldMaybe' (nextMessage db tz ct) $ \(pointInFuture, message) -> do
-    putErr po ("Next message: " <> textShow pointInFuture <> ": " <> textShow message)
-    putErr po ("Appts: " <> textShow (sortBy (compare `on` fst) (collectAppts db tz ct)))
-    backThread <- forkIO $ do
-      ct' <- getCurrentTime
-      let diff = pointInFuture .-. ct'
-          -- Add some seconds, hopefully to wake up _after_ the appointment
-          waitTime = fromIntegral ((diff ^. microseconds) + 1000 * 1000 * 10)
-      putErr po ("Waiting " <> textShow waitTime)
-      threadDelay waitTime
-      modifyMVar_ stateVar $ \(ProgramState po db' dir _) -> do
-        newWait <- newWaitJob po db' stateVar
-        sendMessage message
-        pure (ProgramState po db' dir newWait)
-    pure (WaitJob backThread)
+  nm <- nextMessage db tz ct
+  case nm of
+    Nothing -> pure Nothing -- FIXME: There's a pattern with the pure Nothing here.
+    Just (pointInFuture, message) -> do
+      putErr po ("Next message: " <> textShow pointInFuture <> ": " <> textShow message)
+      appts <- collectAppts db tz ct
+      putErr po ("Appts: " <> textShow (sortBy (compare `on` fst) appts))
+      backThread <- forkIO $ do
+        ct' <- getCurrentTime
+        let diff = pointInFuture .-. ct'
+            -- Add some seconds, hopefully to wake up _after_ the appointment
+            waitTime = fromIntegral ((diff ^. microseconds) + 1000 * 1000 * 10)
+        putErr po ("Waiting " <> textShow waitTime)
+        threadDelay waitTime
+        modifyMVar_ stateVar $ \(ProgramState _ db' dir _) -> do
+          newWait <- newWaitJob po db' stateVar
+          sendMessage message
+          pure (ProgramState po db' dir newWait)
+      pure (Just (WaitJob backThread))
 
 eventHandler :: MVar ProgramState -> Event -> IO ()
 eventHandler stateVar event = modifyMVar_ stateVar (eventHandler' stateVar event)

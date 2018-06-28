@@ -38,7 +38,9 @@ import           IcalBot.ApptStatus     (ApptStatus (ApptEnds, ApptStarts))
 import           IcalBot.DateOrDateTime (DateOrDateTime (AllDay, AtPoint))
 import           IcalBot.EventDB        (EventDifference (..))
 import           IcalBot.MatrixMessage  (MatrixMessage, plainMessage)
+import           IcalBot.RepeatInfo     (riFirstRep)
 import           IcalBot.SubAppt        (SubAppt (saAppt, saStatus))
+import           IcalBot.TimeOrRepeat   (TimeOrRepeat (Repeat, Time))
 import           IcalBot.Util           (utcTimeAtTz)
 import           Text.Show              (Show, show)
 
@@ -74,8 +76,11 @@ formatTime :: TZ -> AppointedTime -> Text.Text
 formatTime tz (OnlyStart dateOrDt) = formatDateOrDateTime tz dateOrDt
 formatTime tz (Range start end)    = "vom " <> formatDateOrDateTime tz start <> " bis " <> formatDateOrDateTime tz end
 
-formatEventAsText :: TZ -> Appt -> Text.Text
-formatEventAsText tz e = apptSummary e <> " " <> formatTime tz (apptTime e)
+formatEventAsText :: TZ -> Appt TimeOrRepeat -> Text.Text
+formatEventAsText tz e =
+  case apptTime e of
+    Time t    -> apptSummary e <> " " <> formatTime tz t
+    Repeat ri -> apptSummary e <> " " <> formatTime tz (riFirstRep ri)
 
 formatDiffAsText :: TZ -> EventDifference -> Text.Text
 formatDiffAsText tz (DiffNew e)      = "Neuer Termin: " <> formatEventAsText tz e
@@ -88,10 +93,9 @@ formatDiffs tz xs = Just (plainMessage (Text.intercalate "," (formatDiffAsText t
 
 -- |Format the appointment as if it's happening now.
 formatSubApptNow :: SubAppt -> MatrixMessage
-formatSubApptNow sa =
-  plainMessage $ case saStatus sa of
-    ApptStarts -> "Beginnt jetzt: " <> apptSummary (saAppt sa)
-    ApptEnds   -> "Endet jetzt: " <> apptSummary (saAppt sa)
+formatSubApptNow sa = plainMessage $ case saStatus sa of
+  ApptStarts -> "Beginnt jetzt: " <> apptSummary (saAppt sa)
+  ApptEnds   -> "Endet jetzt: " <> apptSummary (saAppt sa)
 
 -- formatEvents :: [Appt] -> Maybe MatrixMessage
 -- formatEvents [] = Nothing

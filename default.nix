@@ -8,17 +8,19 @@ let
 
   f = { mkDerivation, base, bifunctors, containers, data-default
       , directory, filepath, fsnotify, lens, lucid
+      , monad-loops
       , optparse-applicative, stdenv, text, text-format, thyme, time, tz
-      , vector-space
+      , vector-space, test-framework-th, test-framework-hunit
       }:
       mkDerivation {
         pname = "matrix-ical";
-        version = "0.2";
+        version = "0.3";
         src = ./.;
         isLibrary = true;
         isExecutable = true;
+        testHaskellDepends = [ test-framework-th test-framework-hunit ];
         libraryHaskellDepends = [
-          base bifunctors containers data-default directory filepath fsnotify
+          base bifunctors containers data-default directory filepath fsnotify monad-loops
           iCalendarDevelop lens lucid text text-format thyme time tz vector-space
         ];
         executableHaskellDepends = [
