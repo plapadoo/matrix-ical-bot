@@ -15,7 +15,8 @@ import           IcalBot.Appt                   (Appt (..))
 import           IcalBot.DateOrDateTime         (DateOrDateTime (..))
 import           IcalBot.EventDB                (EventDifference (..),
                                                  compareDB, eventDBFromFile,
-                                                 eventDBFromList)
+                                                 eventDBFromList,
+                                                 resolveRepetitions)
 import           IcalBot.Formatting             (dayToText,
                                                  formatDateOrDateTime,
                                                  formatEventAsText, formatTime,
@@ -26,7 +27,7 @@ import           IcalBot.RepeatInfo             (RepeatInfo (..))
 import           IcalBot.Scheduling             (collectAppts)
 import           IcalBot.TimeOrRepeat           (TimeOrRepeat (Repeat, Time))
 import           Prelude                        (undefined)
-import           System.IO                      (IO)
+import           System.IO                      (IO, print)
 import           System.Locale                  (defaultTimeLocale)
 import           Test.Framework.Providers.HUnit (testCase)
 import           Test.Framework.TH              (defaultMainGenerator)
@@ -175,6 +176,29 @@ case_collectApptsOnlyStartAtPoint = do
              , (readTimeString "2017-10-31T20:00:00", "Termin morgen: 10:00 Uhr foo")
              , (readTimeString "2017-11-01T08:00:00", "Termin heute: 10:00 Uhr foo")
              ]
+
+case_eventWithRepetition = do
+  let fn = "test/data/yearly-repeat.ical"
+      now = readTimeString "2017-10-01T10:00:00"
+  db <- eventDBFromFile fn
+  dbNoReps <- resolveRepetitions db now
+  appts <- collectAppts db utcTZ now
+  let result = second messagePlainText <$> appts
+  result @?= [ (readTimeString "2018-06-13T20:00:00", "Termin morgen: Some Birthday (ganztaegig)")
+             , (readTimeString "2018-06-14T08:00:00", "Termin heute: Some Birthday (ganztaegig)")
+             ]
+
+case_eventWithRepetitionInPast = do
+  let fn = "test/data/yearly-repeat.ical"
+      now = readTimeString "2018-06-15T10:00:00"
+  db <- eventDBFromFile fn
+  dbNoReps <- resolveRepetitions db now
+  appts <- collectAppts db utcTZ now
+  let result = second messagePlainText <$> appts
+  result @?= [ (readTimeString "2019-06-13T20:00:00", "Termin morgen: Some Birthday (ganztaegig)")
+             , (readTimeString "2019-06-14T08:00:00", "Termin heute: Some Birthday (ganztaegig)")
+             ]
+
 
 -- |Single appt, with just a start date/time, in Berlin.
 case_collectApptsOnlyStartAtPointEurope = do

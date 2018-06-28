@@ -126,6 +126,12 @@ timeFromIcal start end = do
         Left x -> case dtEndValue x of
             VDate (Date d) -> pure (Range start' (AllDay (toThyme d)))
             VDateTime d    -> Range start' <$> dateTimeFromIcal d
+        -- If it's one day duration and the start is just a date, then
+        -- it's an all-day in disguise and we have no end
+        Right (DurationProp d@(DurationDate Positive 1 0 0 0) _)    ->
+          case start' of
+            AllDay _ -> pure (OnlyStart start')
+            _ -> pure (Range start' (addDuration start' (durationToDiffTime d)))
         Right (DurationProp d _)    -> pure (Range start' (addDuration start' (durationToDiffTime d)))
 
 -- |Return the first repetition of an event after the specified date
