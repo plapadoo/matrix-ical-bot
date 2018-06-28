@@ -16,16 +16,20 @@ module IcalBot.Formatting(
   , formatTodayAppts
   ) where
 
-import           Control.Lens           ((^.))
-import           Data.Function          (($), (.))
+import           Control.Lens           (view, (^.))
+import           Data.Bool              (Bool)
+import           Data.Eq                ((==))
+import           Data.Function          (on, ($), (.))
 import           Data.Functor           ((<$>))
-import           Data.Maybe             (Maybe (Just, Nothing), fromJust)
+import           Data.Maybe             (Maybe (Just, Nothing), fromJust,
+                                         fromMaybe)
 import           Data.Monoid            ((<>))
 import           Data.Ord               ((<))
 import           Data.String            (IsString (fromString))
 import qualified Data.Text              as Text
 import           Data.Thyme.Calendar    (Day, gregorian, _ymdDay, _ymdMonth,
                                          _ymdYear)
+import           Data.Thyme.Clock       (UTCTime, _utctDay)
 import           Data.Thyme.LocalTime   (LocalTime, TimeOfDay (..), _localDay,
                                          _localTimeOfDay)
 import           Data.Time.Zones        (TZ)
@@ -72,9 +76,27 @@ timeOfDayToText (TimeOfDay hour minute _) =
       minutePadded = if minute < 10 then "0" <> minuteText else minuteText
   in hourText <> ":" <> minutePadded <> " Uhr"
 
+sameDayUtc :: UTCTime -> UTCTime -> Bool
+sameDayUtc = (==) `on` view _utctDay
+
+sameDaySuffix :: TZ -> DateOrDateTime -> DateOrDateTime -> Maybe Text.Text
+sameDaySuffix tz start end =
+  case start of
+    AtPoint startutc ->
+      case end of
+        AtPoint endutc ->
+          if sameDayUtc startutc endutc
+          then Just (timeOfDayToText ((utcTimeAtTz tz startutc) ^. _localTimeOfDay))
+          else Nothing
+        _ -> Nothing
+    _ -> Nothing
+
 formatTime :: TZ -> AppointedTime -> Text.Text
 formatTime tz (OnlyStart dateOrDt) = formatDateOrDateTime tz dateOrDt
-formatTime tz (Range start end)    = "vom " <> formatDateOrDateTime tz start <> " bis " <> formatDateOrDateTime tz end
+formatTime tz (Range start end)    =
+  let prefix = "vom " <> formatDateOrDateTime tz start <> " bis "
+      suffix = fromMaybe (formatDateOrDateTime tz end) (sameDaySuffix tz start end)
+  in prefix <> suffix
 
 formatEventAsText :: TZ -> Appt TimeOrRepeat -> Text.Text
 formatEventAsText tz e =
