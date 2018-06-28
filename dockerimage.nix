@@ -10,7 +10,12 @@ let
   };
 
   pkgs = import src { };
-  thisPackage = pkgs.haskellPackages.callCabal2nix "matrix-ical" ./. {};
+  haskellPackages = pkgs.haskellPackages.override {
+    overrides = self: super: {
+      iCalendarDevelop = self.callPackage (import ./icalendar.nix) {};
+    };
+  };
+  thisPackage = haskellPackages.callPackage (import ./ical-bot.nix) {};
 in
   pkgs.dockerTools.buildImage {
     name = "matrix-ical-bot";
