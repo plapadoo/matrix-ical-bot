@@ -1,5 +1,5 @@
 name:           matrix-ical
-version:        0.2
+version:        0.3
 synopsis:       Bot that listens for ical file system changes and posts them to matrix rooms
 description:    Bot that listens for ical file system changes and posts them to matrix rooms
 homepage:       https://github.com/plapadoo/matrix-ical#readme
@@ -27,6 +27,8 @@ library
   exposed-modules:     IcalBot.Util
                      , IcalBot.MatrixMessage
                      , IcalBot.EventDB
+                     , IcalBot.TimeOrRepeat
+                     , IcalBot.RepeatInfo
                      , IcalBot.AppointedTime
                      , IcalBot.Appt
                      , IcalBot.SubAppt
@@ -43,6 +45,7 @@ library
     , vector-space
     , bifunctors
     , tz
+    , monad-loops
     , time
     , filepath
     , thyme
@@ -51,7 +54,7 @@ library
     , data-default
     , lucid
     , containers
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N -Wall
+  ghc-options: -Wall
 
 executable matrix-ical-bot
   main-is: Main.hs
