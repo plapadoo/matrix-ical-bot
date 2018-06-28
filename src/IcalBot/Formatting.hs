@@ -80,7 +80,7 @@ formatEventAsText :: TZ -> Appt TimeOrRepeat -> Text.Text
 formatEventAsText tz e =
   case apptTime e of
     Time t    -> apptSummary e <> " " <> formatTime tz t
-    Repeat ri -> apptSummary e <> " " <> formatTime tz (riFirstRep ri)
+    Repeat ri -> apptSummary e <> " " <> formatTime tz (riFirstRep ri) <> " (wiederholt sich)"
 
 formatDiffAsText :: TZ -> EventDifference -> Text.Text
 formatDiffAsText tz (DiffNew e)      = "Neuer Termin: " <> formatEventAsText tz e

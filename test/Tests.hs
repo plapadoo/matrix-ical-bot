@@ -18,11 +18,14 @@ import           IcalBot.EventDB                (EventDifference (..),
                                                  eventDBFromList)
 import           IcalBot.Formatting             (dayToText,
                                                  formatDateOrDateTime,
-                                                 formatTime, localTimeToText,
+                                                 formatEventAsText, formatTime,
+                                                 localTimeToText,
                                                  timeOfDayToText)
 import           IcalBot.MatrixMessage          (messagePlainText, plainMessage)
+import           IcalBot.RepeatInfo             (RepeatInfo (..))
 import           IcalBot.Scheduling             (collectAppts)
 import           IcalBot.TimeOrRepeat           (TimeOrRepeat (Repeat, Time))
+import           Prelude                        (undefined)
 import           System.IO                      (IO)
 import           System.Locale                  (defaultTimeLocale)
 import           Test.Framework.Providers.HUnit (testCase)
@@ -132,6 +135,28 @@ case_formatDateOrDateTimeAtPoint =
 case_formatTimeOnlyStart = formatTime utcTZ (OnlyStart (AllDay (readDayString "2018-10-02"))) @?= "2.10.2018"
 
 case_formatTimeRange = formatTime utcTZ (Range (AllDay (readDayString "2018-10-02")) (AllDay (readDayString "2018-10-03"))) @?= "vom 2.10.2018 bis 3.10.2018"
+
+case_formatEventAsTextNonRepeating = do
+  let start = readTimeString "2017-11-01T10:00:00"
+      appt = Appt {
+          apptPath = "/some/path.ical"
+        , apptSummary = "foo"
+        , apptTime = Time (OnlyStart (AtPoint start))
+        , apptUid = "uid"
+        }
+      result = formatEventAsText utcTZ appt
+  result @?= "foo 1.11.2017 10:00 Uhr"
+
+case_formatEventAsTextRepeating = do
+  let start = readTimeString "2017-11-01T10:00:00"
+      appt = Appt {
+          apptPath = "/some/path.ical"
+        , apptSummary = "foo"
+        , apptTime = Repeat (RepeatInfo undefined (OnlyStart (AtPoint start)))
+        , apptUid = "uid"
+        }
+      result = formatEventAsText utcTZ appt
+  result @?= "foo 1.11.2017 10:00 Uhr (wiederholt sich)"
 
 -- |Single appt, with just a start date/time, in UTC.
 case_collectApptsOnlyStartAtPoint = do
