@@ -1,6 +1,7 @@
 { mkDerivation, base, bifunctors, containers, data-default
       , directory, filepath, fsnotify, lens, lucid
       , monad-loops
+      , hslogger
       , optparse-applicative, stdenv, text, text-format, thyme, time, tz
       , vector-space, test-framework-th, test-framework-hunit, iCalendarDevelop
 }:
@@ -12,10 +13,12 @@
         isExecutable = true;
         testHaskellDepends = [ test-framework-th test-framework-hunit ];
         libraryHaskellDepends = [
+          hslogger
           base bifunctors containers data-default directory filepath fsnotify monad-loops
           iCalendarDevelop lens lucid text text-format thyme time tz vector-space
         ];
         executableHaskellDepends = [
+          hslogger
           base filepath fsnotify lens optparse-applicative text text-format
           thyme tz vector-space
         ];
