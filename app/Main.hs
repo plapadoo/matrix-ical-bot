@@ -33,7 +33,8 @@ import           ProgramOptions            (poDirectory, poLogFile,
 import           System.FilePath
 import           System.FSNotify           (Event (..), watchTree, withManager)
 import           System.IO                 (BufferMode (NoBuffering), IO,
-                                            hSetBuffering, stdout)
+                                            hSetBuffering, hSetEncoding, stdout,
+                                            utf8)
 import           System.Log.Formatter      (simpleLogFormatter)
 import           System.Log.Handler        (setFormatter)
 import           System.Log.Handler.Simple (fileHandler)
@@ -93,6 +94,7 @@ eventHandler' stateVar _ (ProgramState db dir wait) = do
 main :: IO ()
 main = do
   hSetBuffering stdout NoBuffering
+  hSetEncoding stdout utf8
   po <- readProgramOptions
   updateGlobalLogger loggerName (setLevel DEBUG)
   lh <- fileHandler (po ^. poLogFile) DEBUG >>= \lh' -> pure (setFormatter lh' (simpleLogFormatter "$time [$prio] $msg"))
