@@ -86,7 +86,7 @@ sameDaySuffix tz start end =
       case end of
         AtPoint endutc ->
           if sameDayUtc startutc endutc
-          then Just (timeOfDayToText ((utcTimeAtTz tz startutc) ^. _localTimeOfDay))
+          then Just (timeOfDayToText ((utcTimeAtTz tz endutc) ^. _localTimeOfDay))
           else Nothing
         _ -> Nothing
     _ -> Nothing
